@@ -36,3 +36,19 @@ target-version = "py311"
 [tool.mypy]
 python_version = "3.11"
 strict = false
+
+[tool.coverage.run]
+omit = [
+    "src/memora/shared/interfaces.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "@abstractmethod",
+    "@abc.abstractmethod",
+]
