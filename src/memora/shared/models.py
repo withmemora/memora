@@ -7,11 +7,9 @@ These models form the contract between the core, interface, and shared layers.
 from __future__ import annotations
 
 import hashlib
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import ClassVar
 
 
 class ContentType(Enum):

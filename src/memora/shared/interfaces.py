@@ -15,7 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from .models import Conflict, ContextBlock, Fact, MemoryCommit, QueryResult
+from .models import Conflict, Fact, MemoryCommit
 
 
 class CoreEngineInterface(ABC):
