@@ -14,10 +14,9 @@ and content-addressable storage.
 import hashlib
 import json
 import zlib
-from datetime import datetime
 
 from memora.shared.exceptions import HashMismatchError
-from memora.shared.models import Fact, MemoryCommit, MemoryTree, MemoryTreeEntry
+from memora.shared.models import Fact, MemoryCommit, MemoryTree
 
 
 def hash_bytes(data: bytes) -> str:
