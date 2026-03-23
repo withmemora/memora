@@ -243,7 +243,7 @@ class ObjectStore:
         Returns:
             List of 64-character hash strings
         """
-        hashes = []
+        hashes: list[str] = []
 
         if not self.objects_path.exists():
             return hashes
