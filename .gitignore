@@ -60,3 +60,6 @@ Thumbs.db
 # Assets - specific files not to push
 assets/logo.png
 assets/logo-frame.png
+
+# Git automation scripts
+git_history.py
