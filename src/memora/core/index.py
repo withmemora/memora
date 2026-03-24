@@ -443,3 +443,5 @@ class MemoryIndex:
     def clear_caches(self) -> None:
         """Clear all caches for debugging/testing."""
         self.performance_layer.clear_all_caches()
+
+# Performance optimization enhancements
