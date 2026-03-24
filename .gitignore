@@ -63,3 +63,8 @@ assets/logo-frame.png
 
 # Git automation scripts
 git_history.py
+
+# Documentation files to exclude
+COMPLETION_ROADMAP.md
+PROJECT_STRUCTURE.md
+auto_commit.py
