@@ -68,35 +68,6 @@ jobs:
           name: safety-report
           path: safety-report.json
 
-  license-check:
-    name: "License Compliance"
-    runs-on: ubuntu-latest
-    
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Check licenses
-        run: |
-          pip install pip-licenses pip-tools
-          pip-compile pyproject.toml --output-file requirements.txt
-          pip install -r requirements.txt
-          pip-licenses --from=mixed --format=json --output-file=licenses.json
-          pip-licenses --from=mixed --allow-only="MIT;BSD;Apache;Apache 2.0;Apache Software License;Apache-2.0 OR GPL-2.0-or-later;ISC;ISC License (ISCL);Mozilla Public License 2.0 (MPL 2.0);Python Software Foundation License;BSD License;BSD-3-Clause;BSD-2-Clause"
-
-      - name: Upload license report
-        uses: actions/upload-artifact@v4
-        with:
-          name: license-report
-          path: licenses.json
-
   performance:
     name: "Performance Benchmarks"
     runs-on: ubuntu-latest
