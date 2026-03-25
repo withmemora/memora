@@ -14,10 +14,9 @@ import logging
 import uvicorn
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query, BackgroundTasks
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .readable_memory import ReadableMemoryManager
@@ -410,7 +409,7 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         while True:
             # Keep connection alive and wait for messages
-            data = await websocket.receive_text()
+            await websocket.receive_text()  # Receive but don't store unused data
             # Echo back for heartbeat
             await websocket.send_json(
                 {"type": "heartbeat", "timestamp": datetime.utcnow().isoformat()}

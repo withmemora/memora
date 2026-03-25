@@ -1,6 +1,5 @@
 """Tests for NLP ingestion pipeline."""
 
-import pytest
 
 from memora.core.ingestion import (
     assign_confidence,

@@ -1,10 +1,8 @@
 """Tests for conflict detection and resolution."""
 
-import json
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-import pytest
 
 from memora.core.conflicts import (
     detect_conflicts,

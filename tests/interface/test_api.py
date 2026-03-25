@@ -1,6 +1,5 @@
 """Tests for interface/api.py."""
 
-import pytest
 
 from memora.interface.api import MemoraStore
 

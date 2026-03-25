@@ -5,14 +5,12 @@ This module tests:
 - refs functions: branch management, HEAD operations
 """
 
-import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
-from memora.core.objects import serialize_fact, hash_fact
+from memora.core.objects import hash_fact
 from memora.core.refs import (
     get_branch,
     get_head,

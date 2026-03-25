@@ -237,12 +237,12 @@ class ReadableMemoryManager:
         # Switch to branch if needed
         try:
             self.core_engine.switch_branch(branch_name)
-        except:
+        except Exception:
             # Branch doesn't exist, create it
             try:
                 self.core_engine.create_branch(branch_name)
                 self.core_engine.switch_branch(branch_name)
-            except:
+            except Exception:
                 pass  # Use current branch
 
         self.sessions[session_id] = branch_name
@@ -259,7 +259,7 @@ class ReadableMemoryManager:
         # Switch to session branch
         try:
             self.core_engine.switch_branch(branch_name)
-        except:
+        except Exception:
             pass
 
         # Extract facts from message using core engine

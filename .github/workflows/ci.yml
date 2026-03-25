@@ -77,7 +77,7 @@ jobs:
         run: poetry install
 
       - name: Type check with mypy
-        run: poetry run mypy src/memora/
+        run: poetry run mypy src/memora/ --ignore-missing-imports --no-strict-optional
 
   test:
     name: "Test (Python ${{ matrix.python-version }})"

@@ -1,6 +1,5 @@
 """Tests for memora package __init__.py."""
 
-import pytest
 
 
 def test_memora_store_import():

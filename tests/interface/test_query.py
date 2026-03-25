@@ -3,7 +3,6 @@
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
-import pytest
 
 from memora.interface.query import (
     smart_recall,

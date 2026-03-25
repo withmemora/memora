@@ -7,9 +7,9 @@ objects with full resolution lifecycle tracking.
 
 import hashlib
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any
+from typing import Optional, List, Dict, Any
 
 from memora.shared.models import Fact, Conflict, ConflictType, ConflictStatus
 
@@ -578,7 +578,7 @@ def create_enhanced_conflict_commands():
     import typer
     from rich.console import Console
     from rich.table import Table
-    from rich.prompt import Prompt, Confirm
+    from rich.prompt import Prompt
     from pathlib import Path
 
     console = Console()
@@ -635,7 +635,7 @@ def create_enhanced_conflict_commands():
 
         console.print(table)
         console.print(f"\nShowing {len(conflicts)} conflicts")
-        console.print(f"Use [cyan]memora conflicts resolve <id>[/cyan] to resolve")
+        console.print("Use [cyan]memora conflicts resolve <id>[/cyan] to resolve")
 
     def conflicts_resolve(
         conflict_id: str = typer.Argument(help="Conflict ID (short form accepted)"),
@@ -662,7 +662,7 @@ def create_enhanced_conflict_commands():
             return
 
         # Show conflict details
-        console.print(f"\n[bold]Conflict Details[/bold]")
+        console.print("\n[bold]Conflict Details[/bold]")
         console.print(f"Entity: [cyan]{matching_conflict['entity']}[/cyan]")
         console.print(f"Attribute: [cyan]{matching_conflict['attribute']}[/cyan]")
         console.print(f"Type: [yellow]{matching_conflict['conflict_type']}[/yellow]")
@@ -711,7 +711,7 @@ def create_enhanced_conflict_commands():
         if success:
             console.print(f"[green]✓[/green] Conflict resolved: kept fact {winner.upper()}")
         else:
-            console.print(f"[red]✗[/red] Failed to resolve conflict")
+            console.print("[red]✗[/red] Failed to resolve conflict")
 
     def conflicts_summary():
         """Show conflict statistics summary."""

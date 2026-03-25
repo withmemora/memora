@@ -4,7 +4,6 @@ This module takes retrieved facts and conflicts and formats them into
 structured context blocks that can be injected into LLM system prompts.
 """
 
-import re
 from datetime import datetime
 from typing import Dict, List
 

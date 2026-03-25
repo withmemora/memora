@@ -1,9 +1,6 @@
 """Tests for context assembly."""
 
-import tempfile
-from datetime import datetime, timedelta
-from pathlib import Path
-import pytest
+from datetime import datetime
 
 from memora.interface.assembler import (
     assemble_context,
@@ -83,7 +80,7 @@ def test_assemble_context_basic():
     # Verify structure
     assert isinstance(context, ContextBlock)
     assert context.fact_count == 3
-    assert context.has_conflicts == False
+    assert context.has_conflicts is False
     assert context.assembled_at is not None
 
     # Verify content format
@@ -110,7 +107,7 @@ def test_assemble_context_with_conflicts():
     context = assemble_context(facts, conflicts)
 
     # Verify conflict inclusion
-    assert context.has_conflicts == True
+    assert context.has_conflicts is True
     assert "CONFLICT WARNING" in context.formatted_text
 
 
@@ -225,7 +222,7 @@ def test_assemble_context_empty_facts():
     context = assemble_context([])
 
     assert context.fact_count == 0
-    assert context.has_conflicts == False
+    assert context.has_conflicts is False
     assert "[MEMORA MEMORY CONTEXT" in context.formatted_text
     assert "[END MEMORA CONTEXT]" in context.formatted_text
 
@@ -236,7 +233,7 @@ def test_assemble_context_no_conflicts():
 
     context = assemble_context([fact], conflicts=None)
 
-    assert context.has_conflicts == False
+    assert context.has_conflicts is False
     assert "CONFLICT WARNING" not in context.formatted_text
 
 
@@ -341,6 +338,6 @@ def test_context_block_properties():
 
     assert isinstance(context.assembled_at, datetime)
     assert context.fact_count == 1
-    assert context.has_conflicts == True
+    assert context.has_conflicts is True
     assert isinstance(context.formatted_text, str)
     assert len(context.formatted_text) > 0

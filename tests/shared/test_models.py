@@ -1,9 +1,7 @@
 """Tests for shared/models.py data structures."""
 
-import hashlib
 from datetime import datetime
 
-import pytest
 
 from memora.shared.models import (
     Conflict,

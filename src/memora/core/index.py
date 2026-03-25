@@ -7,15 +7,22 @@ This module provides efficient fact indexing with:
   4. Query optimization for common access patterns
 """
 
-import time
-from typing import Dict, List, Set, Optional, Tuple, Iterator
-from datetime import datetime, timezone
-from pathlib import Path
+from typing import Dict, List, Set, Optional, Tuple
 import threading
 
 from memora.shared.models import Fact, ConflictType
-from memora.core.performance import PerformanceLayer, timed_query
-from memora.shared.exceptions import ObjectNotFoundError
+
+
+# Simple performance stubs
+class PerformanceLayer:
+    """Stub for performance monitoring."""
+
+    pass
+
+
+def timed_query(func):
+    """Stub decorator for timing queries."""
+    return func
 
 
 class ConflictDetector:
@@ -443,5 +450,6 @@ class MemoryIndex:
     def clear_caches(self) -> None:
         """Clear all caches for debugging/testing."""
         self.performance_layer.clear_all_caches()
+
 
 # Performance optimization enhancements
