@@ -64,7 +64,10 @@ assets/logo-frame.png
 # Git automation scripts
 git_history.py
 
-# Documentation files to exclude
+# Documentation files to exclude (keep local for development)
 COMPLETION_ROADMAP.md
 PROJECT_STRUCTURE.md
+CLAUDE_COMPLETE_SPEC.md
+FOSS_HACK_IMPLEMENTATION_GUIDE.md
+WEBSITE_DOCS_LICENSING.md
 auto_commit.py
