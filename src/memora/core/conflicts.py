@@ -381,94 +381,134 @@ class ConflictManager:
         from ..core.store import ObjectStore
 
         object_store = ObjectStore(self.store_path)
-        conflicts_with_context = []
-
-        # Determine which conflicts to check
-        if status_filter == ConflictStatus.UNRESOLVED:
-            conflict_dir = self.conflicts_dir / "open"
-        else:
-            conflict_dir = self.conflicts_dir / "resolved"
+        conflict_dir = self._get_conflict_directory(status_filter)
 
         if not conflict_dir.exists():
             return []
 
-        # Load all conflict files
+        conflicts_with_context = []
         for conflict_file in conflict_dir.glob("*.json"):
-            try:
-                conflict_data = json.loads(conflict_file.read_text())
-                conflict = Conflict(**conflict_data)
-
-                # Apply date filter
-                if since and conflict.detected_at < since:
-                    continue
-
-                # Load facts for context
-                try:
-                    fact_a = object_store.read_fact(conflict.fact_a_hash)
-                    fact_b = object_store.read_fact(conflict.fact_b_hash)
-                except Exception:
-                    continue  # Skip if facts can't be loaded
-
-                # Apply entity filter
-                if entity_filter and not (
-                    entity_filter.lower() in fact_a.entity.lower()
-                    or entity_filter.lower() in fact_b.entity.lower()
-                ):
-                    continue
-
-                # Apply search filter
-                if search_term and not (
-                    search_term.lower() in fact_a.value.lower()
-                    or search_term.lower() in fact_b.value.lower()
-                    or search_term.lower() in fact_a.attribute.lower()
-                    or search_term.lower() in fact_b.attribute.lower()
-                ):
-                    continue
-
-                # Create rich context
-                conflict_context = {
-                    "conflict_id": conflict.conflict_id,
-                    "short_id": conflict.conflict_id[:8],  # First 8 chars for display
-                    "entity": fact_a.entity,
-                    "attribute": fact_a.attribute,
-                    "conflict_type": conflict.conflict_type.value,
-                    "detected_at": conflict.detected_at,
-                    "time_ago": self._time_ago(conflict.detected_at),
-                    "fact_a": {
-                        "value": fact_a.value,
-                        "content": fact_a.content[:100] + "..."
-                        if len(fact_a.content) > 100
-                        else fact_a.content,
-                        "observed_at": fact_a.observed_at,
-                        "confidence": fact_a.confidence,
-                        "source": fact_a.source,
-                    },
-                    "fact_b": {
-                        "value": fact_b.value,
-                        "content": fact_b.content[:100] + "..."
-                        if len(fact_b.content) > 100
-                        else fact_b.content,
-                        "observed_at": fact_b.observed_at,
-                        "confidence": fact_b.confidence,
-                        "source": fact_b.source,
-                    },
-                }
-
+            conflict_context = self._process_conflict_file(
+                conflict_file, object_store, since, search_term, entity_filter
+            )
+            if conflict_context:
                 conflicts_with_context.append(conflict_context)
 
-            except Exception as e:
-                print(f"Warning: Could not load conflict {conflict_file}: {e}")
-                continue
+        return self._sort_and_limit_conflicts(conflicts_with_context, limit)
 
-        # Sort by detection time (newest first)
-        conflicts_with_context.sort(
-            key=lambda x: x["detected_at"].isoformat()
-            if hasattr(x["detected_at"], "isoformat")
-            else str(x["detected_at"]),
-            reverse=True,
+    def _get_conflict_directory(self, status_filter: ConflictStatus) -> Path:
+        """Get the directory path for conflicts based on status filter."""
+        if status_filter == ConflictStatus.UNRESOLVED:
+            return self.conflicts_dir / "open"
+        else:
+            return self.conflicts_dir / "resolved"
+
+    def _process_conflict_file(
+        self,
+        conflict_file: Path,
+        object_store,
+        since: Optional[datetime],
+        search_term: Optional[str],
+        entity_filter: Optional[str],
+    ) -> Optional[Dict[str, Any]]:
+        """Process a single conflict file and return context if it matches filters."""
+        try:
+            conflict_data = json.loads(conflict_file.read_text())
+            conflict = Conflict(**conflict_data)
+
+            if not self._passes_date_filter(conflict, since):
+                return None
+
+            fact_a, fact_b = self._load_conflict_facts(conflict, object_store)
+            if not fact_a or not fact_b:
+                return None
+
+            if not self._passes_filters(fact_a, fact_b, entity_filter, search_term):
+                return None
+
+            return self._create_conflict_context(conflict, fact_a, fact_b)
+
+        except Exception as e:
+            print(f"Warning: Could not load conflict {conflict_file}: {e}")
+            return None
+
+    def _passes_date_filter(self, conflict: Conflict, since: Optional[datetime]) -> bool:
+        """Check if conflict passes the date filter."""
+        return not (since and conflict.detected_at < since)
+
+    def _load_conflict_facts(self, conflict: Conflict, object_store):
+        """Load facts for a conflict, returning None if either cannot be loaded."""
+        try:
+            fact_a = object_store.read_fact(conflict.fact_a_hash)
+            fact_b = object_store.read_fact(conflict.fact_b_hash)
+            return fact_a, fact_b
+        except Exception:
+            return None, None
+
+    def _passes_filters(
+        self, fact_a, fact_b, entity_filter: Optional[str], search_term: Optional[str]
+    ) -> bool:
+        """Check if facts pass entity and search term filters."""
+        if entity_filter and not self._passes_entity_filter(fact_a, fact_b, entity_filter):
+            return False
+
+        if search_term and not self._passes_search_filter(fact_a, fact_b, search_term):
+            return False
+
+        return True
+
+    def _passes_entity_filter(self, fact_a, fact_b, entity_filter: str) -> bool:
+        """Check if facts pass the entity filter."""
+        entity_lower = entity_filter.lower()
+        return entity_lower in fact_a.entity.lower() or entity_lower in fact_b.entity.lower()
+
+    def _passes_search_filter(self, fact_a, fact_b, search_term: str) -> bool:
+        """Check if facts pass the search term filter."""
+        search_lower = search_term.lower()
+        return (
+            search_lower in fact_a.value.lower()
+            or search_lower in fact_b.value.lower()
+            or search_lower in fact_a.attribute.lower()
+            or search_lower in fact_b.attribute.lower()
         )
 
-        return conflicts_with_context[:limit]
+    def _create_conflict_context(self, conflict: Conflict, fact_a, fact_b) -> Dict[str, Any]:
+        """Create rich context dictionary for a conflict."""
+        return {
+            "conflict_id": conflict.conflict_id,
+            "short_id": conflict.conflict_id[:8],
+            "entity": fact_a.entity,
+            "attribute": fact_a.attribute,
+            "conflict_type": conflict.conflict_type.value,
+            "detected_at": conflict.detected_at,
+            "time_ago": self._time_ago(conflict.detected_at),
+            "fact_a": self._create_fact_context(fact_a),
+            "fact_b": self._create_fact_context(fact_b),
+        }
+
+    def _create_fact_context(self, fact) -> Dict[str, Any]:
+        """Create context dictionary for a fact."""
+        return {
+            "value": fact.value,
+            "content": fact.content[:100] + "..." if len(fact.content) > 100 else fact.content,
+            "observed_at": fact.observed_at,
+            "confidence": fact.confidence,
+            "source": fact.source,
+        }
+
+    def _sort_and_limit_conflicts(
+        self, conflicts: List[Dict[str, Any]], limit: int
+    ) -> List[Dict[str, Any]]:
+        """Sort conflicts by detection time and apply limit."""
+        conflicts.sort(
+            key=lambda x: (
+                x["detected_at"].isoformat()
+                if hasattr(x["detected_at"], "isoformat")
+                else str(x["detected_at"])
+            ),
+            reverse=True,
+        )
+        return conflicts[:limit]
 
     def get_conflict_summary(self) -> Dict[str, Any]:
         """Get a summary of conflict statistics."""

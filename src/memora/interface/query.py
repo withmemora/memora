@@ -42,31 +42,59 @@ def smart_recall(
     """
     start_time = time.time()
 
-    # Determine strategy
+    # Determine and execute strategy
+    facts = _execute_query_strategy(query, store, strategy)
+
+    # Create result
+    return _create_query_result(facts, query, start_time)
+
+
+def _execute_query_strategy(query: str, store: ObjectStore, strategy: str) -> list[Fact]:
+    """Execute the appropriate retrieval strategy and return facts."""
     if strategy == "auto":
         strategy = _detect_strategy(query)
 
-    # Execute retrieval
-    facts = []
-    if strategy == "entity":
-        entity_name = _extract_entity_name(query)
-        if entity_name:
-            facts = retrieve_by_entity(entity_name, store)
-    elif strategy == "topic":
-        topic_path = _extract_topic_path(query)
-        if topic_path:
-            facts = retrieve_by_topic(topic_path, store)
-    elif strategy == "temporal":
-        start_date, end_date = _extract_time_range(query)
-        if start_date and end_date:
-            facts = retrieve_by_time(start_date, end_date, store)
-    elif strategy == "keyword":
-        facts = retrieve_by_keyword(query, store)
+    strategy_map = {
+        "entity": lambda: _retrieve_entity_facts(query, store),
+        "topic": lambda: _retrieve_topic_facts(query, store),
+        "temporal": lambda: _retrieve_temporal_facts(query, store),
+        "keyword": lambda: retrieve_by_keyword(query, store),
+    }
 
+    retrieval_func = strategy_map.get(strategy, lambda: [])
+    return retrieval_func()
+
+
+def _retrieve_entity_facts(query: str, store: ObjectStore) -> list[Fact]:
+    """Retrieve facts using entity strategy."""
+    entity_name = _extract_entity_name(query)
+    if entity_name:
+        return retrieve_by_entity(entity_name, store)
+    return []
+
+
+def _retrieve_topic_facts(query: str, store: ObjectStore) -> list[Fact]:
+    """Retrieve facts using topic strategy."""
+    topic_path = _extract_topic_path(query)
+    if topic_path:
+        return retrieve_by_topic(topic_path, store)
+    return []
+
+
+def _retrieve_temporal_facts(query: str, store: ObjectStore) -> list[Fact]:
+    """Retrieve facts using temporal strategy."""
+    start_date, end_date = _extract_time_range(query)
+    if start_date and end_date:
+        return retrieve_by_time(start_date, end_date, store)
+    return []
+
+
+def _create_query_result(facts: list[Fact], query: str, start_time: float) -> QueryResult:
+    """Create a QueryResult from retrieved facts."""
     # Rank facts by relevance
     ranked_facts = rank_facts(facts)
 
-    # Create result
+    # Calculate timing and create result
     query_time = time.time() - start_time
     fact_tuples = [(fact.compute_hash(), fact) for fact in ranked_facts]
 

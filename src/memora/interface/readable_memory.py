@@ -253,53 +253,12 @@ class ReadableMemoryManager:
     ) -> Dict[str, Any]:
         """Add message and return readable memory insights."""
 
-        # Get session info
-        branch_name = self.sessions.get(session_id, "main")
+        # Setup session and extract facts
+        branch_name = self._setup_session_branch(session_id)
+        extracted_facts = self._extract_and_commit_facts(message, source)
 
-        # Switch to session branch
-        try:
-            self.core_engine.switch_branch(branch_name)
-        except Exception:
-            pass
-
-        # Extract facts from message using core engine
-        extracted_facts = self.core_engine.ingest_text(message, source, "user")
-
-        # Commit if we have facts
-        if extracted_facts:
-            self.core_engine.commit(f"Added memories from {source}", "user")
-
-        # Convert facts to readable memories
-        new_memories = []
-        evolved_memories = []
-
-        for fact_hash, fact in extracted_facts:
-            # Check if this fact evolved an existing memory
-            evolved = False
-            for existing_hash, cached_memory in self.readable_cache.items():
-                if (
-                    cached_memory.entities
-                    and len(cached_memory.entities) > 0
-                    and cached_memory.entities[0] == fact.entity
-                    and fact.attribute in cached_memory.categories
-                ):
-                    # This is an evolution
-                    updated_memory = self.readability_engine.update_memory_with_evolution(
-                        cached_memory, fact
-                    )
-                    self.readable_cache[fact_hash] = updated_memory
-                    evolved_memories.append(updated_memory)
-                    evolved = True
-                    break
-
-            if not evolved:
-                # New memory
-                readable_memory = self.readability_engine.fact_to_readable_memory(fact)
-                readable_memory.branch = branch_name
-
-                self.readable_cache[fact_hash] = readable_memory
-                self.id_mapping[readable_memory.id] = fact_hash
-                new_memories.append(readable_memory)
+        # Process facts into readable memories
+        new_memories, evolved_memories = self._process_extracted_facts(extracted_facts, branch_name)
 
         return {
             "new_memories": [m.to_display_dict() for m in new_memories],
@@ -307,6 +266,74 @@ class ReadableMemoryManager:
             "memories_created": len(new_memories),
             "memories_evolved": len(evolved_memories),
         }
+
+    def _setup_session_branch(self, session_id: str) -> str:
+        """Setup and switch to the session branch."""
+        branch_name = self.sessions.get(session_id, "main")
+
+        try:
+            self.core_engine.switch_branch(branch_name)
+        except Exception:
+            pass
+
+        return branch_name
+
+    def _extract_and_commit_facts(self, message: str, source: str) -> list:
+        """Extract facts from message and commit if any were found."""
+        extracted_facts = self.core_engine.ingest_text(message, source, "user")
+
+        if extracted_facts:
+            self.core_engine.commit(f"Added memories from {source}", "user")
+
+        return extracted_facts
+
+    def _process_extracted_facts(
+        self, extracted_facts: list, branch_name: str
+    ) -> tuple[list, list]:
+        """Process extracted facts into new and evolved memories."""
+        new_memories = []
+        evolved_memories = []
+
+        for fact_hash, fact in extracted_facts:
+            evolved_memory = self._try_evolve_existing_memory(fact, fact_hash)
+
+            if evolved_memory:
+                evolved_memories.append(evolved_memory)
+            else:
+                new_memory = self._create_new_memory(fact, fact_hash, branch_name)
+                new_memories.append(new_memory)
+
+        return new_memories, evolved_memories
+
+    def _try_evolve_existing_memory(self, fact, fact_hash):
+        """Try to evolve an existing memory with the new fact."""
+        for existing_hash, cached_memory in self.readable_cache.items():
+            if self._can_evolve_memory(cached_memory, fact):
+                updated_memory = self.readability_engine.update_memory_with_evolution(
+                    cached_memory, fact
+                )
+                self.readable_cache[fact_hash] = updated_memory
+                return updated_memory
+        return None
+
+    def _can_evolve_memory(self, cached_memory, fact) -> bool:
+        """Check if a cached memory can be evolved with the given fact."""
+        return (
+            cached_memory.entities
+            and len(cached_memory.entities) > 0
+            and cached_memory.entities[0] == fact.entity
+            and fact.attribute in cached_memory.categories
+        )
+
+    def _create_new_memory(self, fact, fact_hash: str, branch_name: str):
+        """Create a new readable memory from a fact."""
+        readable_memory = self.readability_engine.fact_to_readable_memory(fact)
+        readable_memory.branch = branch_name
+
+        self.readable_cache[fact_hash] = readable_memory
+        self.id_mapping[readable_memory.id] = fact_hash
+
+        return readable_memory
 
     def search_memories(
         self,
@@ -442,11 +469,6 @@ class ReadableMemoryCLI:
             print("❌ Start a session first with: start")
             return
 
-        # Extract facts from thought
-        from memora.core.ingestion import extract_facts
-
-        facts = extract_facts(thought)
-
         # Add to memory
         result = self.memory_manager.add_message(self.current_session, thought)
 
@@ -556,6 +578,26 @@ def main():
     memory_manager = ReadableMemoryManager(Path("./readable_memory_demo"))
     cli = ReadableMemoryCLI(memory_manager)
 
+    _print_help()
+
+    while True:
+        try:
+            user_input = input("readable> ").strip()
+            if not user_input:
+                continue
+
+            if not _handle_command(user_input, cli):
+                break
+
+        except KeyboardInterrupt:
+            print("\n👋 Goodbye!")
+            break
+        except Exception as e:
+            print(f"❌ Error: {e}")
+
+
+def _print_help():
+    """Print available commands."""
     print("Commands:")
     print("  start [branch] - Start memory session")
     print("  add <thought> - Add thought to memory")
@@ -566,52 +608,57 @@ def main():
     print("  quit - Exit")
     print()
 
-    while True:
-        try:
-            user_input = input("readable> ").strip()
 
-            if not user_input:
-                continue
+def _handle_command(user_input: str, cli: ReadableMemoryCLI) -> bool:
+    """Handle a single command. Returns False if should exit, True otherwise."""
+    parts = user_input.split(maxsplit=1)
+    cmd = parts[0].lower()
 
-            parts = user_input.split(maxsplit=1)
-            cmd = parts[0].lower()
+    command_handlers = {
+        "start": lambda: _handle_start_command(parts, cli),
+        "add": lambda: _handle_add_command(parts, cli),
+        "search": lambda: _handle_search_command(parts, cli),
+        "categories": lambda: cli.show_categories(),
+        "timeline": lambda: cli.show_timeline(),
+        "export": lambda: _handle_export_command(parts, cli),
+    }
 
-            if cmd == "start":
-                branch = parts[1] if len(parts) > 1 else "main"
-                cli.start_session(branch)
+    if cmd in ["quit", "exit", "q"]:
+        print("👋 Goodbye!")
+        return False
 
-            elif cmd == "add":
-                if len(parts) < 2:
-                    print("Usage: add <thought>")
-                else:
-                    cli.add_thought(parts[1])
+    if cmd in command_handlers:
+        command_handlers[cmd]()
+    else:
+        print(f"Unknown command: {cmd}")
 
-            elif cmd == "search":
-                search_text = parts[1] if len(parts) > 1 else None
-                cli.search_memories(search_text)
+    return True
 
-            elif cmd == "categories":
-                cli.show_categories()
 
-            elif cmd == "timeline":
-                cli.show_timeline()
+def _handle_start_command(parts: list[str], cli: ReadableMemoryCLI):
+    """Handle the start command."""
+    branch = parts[1] if len(parts) > 1 else "main"
+    cli.start_session(branch)
 
-            elif cmd == "export":
-                format = parts[1] if len(parts) > 1 else "json"
-                cli.export_memories(format)
 
-            elif cmd in ["quit", "exit", "q"]:
-                print("👋 Goodbye!")
-                break
+def _handle_add_command(parts: list[str], cli: ReadableMemoryCLI):
+    """Handle the add command."""
+    if len(parts) < 2:
+        print("Usage: add <thought>")
+    else:
+        cli.add_thought(parts[1])
 
-            else:
-                print(f"Unknown command: {cmd}")
 
-        except KeyboardInterrupt:
-            print("\n👋 Goodbye!")
-            break
-        except Exception as e:
-            print(f"❌ Error: {e}")
+def _handle_search_command(parts: list[str], cli: ReadableMemoryCLI):
+    """Handle the search command."""
+    search_text = parts[1] if len(parts) > 1 else None
+    cli.search_memories(search_text)
+
+
+def _handle_export_command(parts: list[str], cli: ReadableMemoryCLI):
+    """Handle the export command."""
+    format = parts[1] if len(parts) > 1 else "json"
+    cli.export_memories(format)
 
 
 if __name__ == "__main__":

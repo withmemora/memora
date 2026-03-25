@@ -89,7 +89,7 @@ jobs:
           pip-compile pyproject.toml --output-file requirements.txt
           pip install -r requirements.txt
           pip-licenses --from=mixed --format=json --output-file=licenses.json
-          pip-licenses --from=mixed --allow-only="MIT;BSD;Apache;Apache 2.0;Apache Software License;ISC;Mozilla Public License 2.0 (MPL 2.0);Python Software Foundation License;BSD License;BSD-3-Clause;BSD-2-Clause"
+          pip-licenses --from=mixed --allow-only="MIT;BSD;Apache;Apache 2.0;Apache Software License;Apache-2.0 OR GPL-2.0-or-later;ISC;Mozilla Public License 2.0 (MPL 2.0);Python Software Foundation License;BSD License;BSD-3-Clause;BSD-2-Clause"
 
       - name: Upload license report
         uses: actions/upload-artifact@v4
@@ -116,7 +116,19 @@ jobs:
         run: poetry install
 
       - name: Download spaCy model
-        run: poetry run python -m spacy download en_core_web_sm
+        run: |
+          # Alternative approach to avoid typer CLI conflicts
+          poetry run python -c "
+          import subprocess
+          import sys
+          try:
+              import spacy
+              spacy.cli.download('en_core_web_sm')
+          except Exception as e:
+              print(f'Spacy CLI download failed: {e}')
+              # Fallback: install directly via pip
+              subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl'])
+          "
 
       - name: Run performance tests
         run: |

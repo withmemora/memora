@@ -127,230 +127,159 @@ def apply_custom_rules(nlp: Any, doc: Doc, sentence: str, source: str) -> list[F
     Returns:
         List of extracted Fact objects
     """
-    import re
-
     facts: list[Fact] = []
     observed_at = datetime.now(timezone.utc)
-    sentence_lower = sentence.lower()
 
-    # Rule 1: "My name is X" - extract everything after "is"
-    if re.search(r"\bmy\s+name\s+is\s+", sentence_lower):
-        match = re.search(r"\bmy\s+name\s+is\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="name",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.95,
-                )
-            )
+    # Use pattern matching approach to reduce complexity
+    pattern_rules = _get_pattern_rules()
 
-    # Rule 2: "I am X" / "I'm X" - extract everything after "am" or "I'm"
-    if re.search(r"\bi\s+am\s+", sentence_lower) and not re.search(
-        r"\bi\s+am\s+building\b", sentence_lower
-    ):
-        match = re.search(r"\bi\s+am\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="identity",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.95,
-                )
-            )
-    elif re.search(r"\bi'm\s+", sentence_lower) and not re.search(
-        r"\bi'm\s+building\b", sentence_lower
-    ):
-        match = re.search(r"\bi'm\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="identity",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.95,
-                )
-            )
-
-    # Rule 3: "I live in X"
-    if re.search(r"\bi\s+live\s+in\s+", sentence_lower):
-        match = re.search(r"\bi\s+live\s+in\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="location",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.92,
-                )
-            )
-
-    # Rule 4: "My email is X"
-    if re.search(r"\bmy\s+email\s+is\s+", sentence_lower):
-        # Use specific email pattern instead of generic (.+?) to avoid stopping at .com
-        match = re.search(r"\bmy\s+email\s+is\s+(\S+@\S+\.\S+)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="email",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.95,
-                )
-            )
-
-    # Rule 5: "I work at X"
-    if re.search(r"\bi\s+work\s+at\s+", sentence_lower):
-        match = re.search(r"\bi\s+work\s+at\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="employer",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.95,
-                )
-            )
-
-    # Rule 6: "The deadline is X"
-    if re.search(r"\bthe\s+deadline\s+is\s+", sentence_lower):
-        match = re.search(r"\bthe\s+deadline\s+is\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.DATE_VALUE,
-                    entity="current_project",
-                    attribute="deadline",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.90,
-                )
-            )
-
-    # Rule 7: "I prefer X"
-    if re.search(r"\bi\s+prefer\s+", sentence_lower):
-        match = re.search(r"\bi\s+prefer\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.PREFERENCE,
-                    entity="user",
-                    attribute="preference",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.90,
-                )
-            )
-
-    # Rule 8: "My project is X"
-    if re.search(r"\bmy\s+project\s+is\s+", sentence_lower):
-        match = re.search(r"\bmy\s+project\s+is\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="current_project",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.88,
-                )
-            )
-
-    # Rule 9: "I am building X" / "I'm building X"
-    if re.search(r"\bi\s+am\s+building\s+", sentence_lower):
-        match = re.search(r"\bi\s+am\s+building\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="current_project",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.88,
-                )
-            )
-    elif re.search(r"\bi'm\s+building\s+", sentence_lower):
-        match = re.search(r"\bi'm\s+building\s+(.+?)(?:[.!?]|$)", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="current_project",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.88,
-                )
-            )
-
-    # Rule 10: "X is my goal"
-    if re.search(r"\bis\s+my\s+goal", sentence_lower):
-        match = re.search(r"^(.+?)\s+is\s+my\s+goal", sentence, re.IGNORECASE)
-        if match:
-            value = match.group(1).strip()
-            facts.append(
-                Fact(
-                    content=sentence,
-                    content_type=ContentType.TRIPLE,
-                    entity="user",
-                    attribute="goal",
-                    value=value,
-                    source=source,
-                    observed_at=observed_at,
-                    confidence=0.88,
-                )
-            )
+    for rule in pattern_rules:
+        fact = _apply_pattern_rule(rule, sentence, source, observed_at)
+        if fact:
+            facts.append(fact)
 
     return facts
+
+
+def _get_pattern_rules() -> list[dict]:
+    """Get all pattern rules for fact extraction."""
+    return [
+        {
+            "pattern": r"\bmy\s+name\s+is\s+",
+            "extract_pattern": r"\bmy\s+name\s+is\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "name",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bi\s+am\s+",
+            "exclude_pattern": r"\bi\s+am\s+building\b",
+            "extract_pattern": r"\bi\s+am\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "identity",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bi'm\s+",
+            "exclude_pattern": r"\bi'm\s+building\b",
+            "extract_pattern": r"\bi'm\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "identity",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bi\s+live\s+in\s+",
+            "extract_pattern": r"\bi\s+live\s+in\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "location",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.92,
+        },
+        {
+            "pattern": r"\bmy\s+email\s+is\s+",
+            "extract_pattern": r"\bmy\s+email\s+is\s+(\S+@\S+\.\S+)",
+            "entity": "user",
+            "attribute": "email",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bi\s+work\s+at\s+",
+            "extract_pattern": r"\bi\s+work\s+at\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "employer",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bthe\s+deadline\s+is\s+",
+            "extract_pattern": r"\bthe\s+deadline\s+is\s+(.+?)(?:[.!?]|$)",
+            "entity": "current_project",
+            "attribute": "deadline",
+            "content_type": ContentType.DATE_VALUE,
+            "confidence": 0.90,
+        },
+        {
+            "pattern": r"\bi\s+prefer\s+",
+            "extract_pattern": r"\bi\s+prefer\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "preference",
+            "content_type": ContentType.PREFERENCE,
+            "confidence": 0.90,
+        },
+        {
+            "pattern": r"\bmy\s+project\s+is\s+",
+            "extract_pattern": r"\bmy\s+project\s+is\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "current_project",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.88,
+        },
+        {
+            "pattern": r"\bi\s+am\s+building\s+",
+            "extract_pattern": r"\bi\s+am\s+building\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "current_project",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.88,
+        },
+        {
+            "pattern": r"\bi'm\s+building\s+",
+            "extract_pattern": r"\bi'm\s+building\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "current_project",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.88,
+        },
+        {
+            "pattern": r"\bis\s+my\s+goal",
+            "extract_pattern": r"^(.+?)\s+is\s+my\s+goal",
+            "entity": "user",
+            "attribute": "goal",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.88,
+        },
+    ]
+
+
+def _apply_pattern_rule(
+    rule: dict, sentence: str, source: str, observed_at: datetime
+) -> Fact | None:
+    """Apply a single pattern rule and return a Fact if matched."""
+    import re
+
+    sentence_lower = sentence.lower()
+
+    # Check if pattern matches
+    if not re.search(rule["pattern"], sentence_lower):
+        return None
+
+    # Check if exclude pattern matches (for rules that have exclusions)
+    if "exclude_pattern" in rule and re.search(rule["exclude_pattern"], sentence_lower):
+        return None
+
+    # Extract the value using the extraction pattern
+    match = re.search(rule["extract_pattern"], sentence, re.IGNORECASE)
+    if not match:
+        return None
+
+    value = match.group(1).strip()
+    if not value:
+        return None
+
+    return Fact(
+        content=sentence,
+        content_type=rule["content_type"],
+        entity=rule["entity"],
+        attribute=rule["attribute"],
+        value=value,
+        source=source,
+        observed_at=observed_at,
+        confidence=rule["confidence"],
+    )
 
 
 def extract_from_entities(doc: Doc, sentence: str, source: str) -> list[Fact]:
