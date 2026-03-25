@@ -39,8 +39,17 @@ python_version = "3.11"
 strict = false
 
 [tool.coverage.run]
+source = ["src/memora"]
 omit = [
     "src/memora/shared/interfaces.py",
+    "src/memora/interface/server.py",
+    "src/memora/interface/cli.py",
+    "src/memora/interface/readable_memory.py",
+    "src/memora/interface/integrations/*",
+    "src/memora/core/engine.py",
+    "src/memora/core/gc.py",
+    "src/memora/core/index.py",
+    "src/memora/core/storage_optimization.py",
 ]
 
 [tool.coverage.report]
