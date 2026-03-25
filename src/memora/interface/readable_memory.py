@@ -618,3 +618,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Human-readable memory interface
