@@ -31,3 +31,5 @@ class MemoraStore:
 
 
 __all__ = ["app", "start_server", "MemoraStore"]
+
+# API facade for easy integration
