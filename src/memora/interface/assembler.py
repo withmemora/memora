@@ -183,7 +183,7 @@ def _group_facts_by_entity(facts: list[Fact]) -> Dict[str, List[Fact]]:
     Returns:
         Dictionary mapping entity names to lists of facts
     """
-    entity_groups = {}
+    entity_groups: dict[str, list] = {}
 
     for fact in facts:
         entity_name = fact.entity

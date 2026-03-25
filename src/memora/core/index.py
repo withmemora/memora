@@ -7,7 +7,7 @@ This module provides efficient fact indexing with:
   4. Query optimization for common access patterns
 """
 
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional, Tuple, Any
 import threading
 
 from memora.shared.models import Fact, ConflictType
@@ -17,7 +17,62 @@ from memora.shared.models import Fact, ConflictType
 class PerformanceLayer:
     """Stub for performance monitoring."""
 
-    pass
+    def __init__(
+        self, fact_cache_size: int = 1000, object_cache_size: int = 500, query_cache_size: int = 100
+    ):
+        """Initialize performance layer with caches."""
+        self.fact_cache_size = fact_cache_size
+        self.object_cache_size = object_cache_size
+        self.query_cache_size = query_cache_size
+        self._fact_cache: dict = {}
+        self._query_cache: dict = {}
+
+    def find_facts_by_entity_attribute(self, entity: str, attribute: str) -> list[str]:
+        """Find fact hashes by entity and attribute."""
+        return []
+
+    def cache_fact(self, fact_hash: str, fact) -> None:
+        """Cache a fact."""
+        self._fact_cache[fact_hash] = fact
+
+    def invalidate_fact(self, fact_hash: str) -> None:
+        """Invalidate cached fact."""
+        self._fact_cache.pop(fact_hash, None)
+
+    def get_fact(self, fact_hash: str):
+        """Get cached fact."""
+        return self._fact_cache.get(fact_hash)
+
+    def find_facts_by_entity(self, entity: str) -> list[str]:
+        """Find fact hashes by entity."""
+        return []
+
+    def find_facts_by_attribute(self, attribute: str) -> list[str]:
+        """Find fact hashes by attribute."""
+        return []
+
+    def get_performance_stats(self) -> dict:
+        """Get performance statistics."""
+        return {}
+
+    def query_cache_get(self, key: str):
+        """Get cached query result."""
+        return self._query_cache.get(key)
+
+    def query_cache_put(self, key: str, value):
+        """Cache query result."""
+        self._query_cache[key] = value
+
+    def query_cache_invalidate_pattern(self, pattern: str):
+        """Invalidate cached queries matching pattern."""
+        keys_to_remove = [k for k in self._query_cache.keys() if pattern in k]
+        for k in keys_to_remove:
+            self._query_cache.pop(k, None)
+
+    def clear_all_caches(self) -> None:
+        """Clear all caches."""
+        self._fact_cache.clear()
+        self._query_cache.clear()
 
 
 def timed_query(func):
@@ -133,7 +188,7 @@ class FactIndexManager:
             fact_hash: Hash of the fact
         """
         with self._lock:
-            self.perf.invalidate_fact(fact_hash, fact)
+            self.perf.invalidate_fact(fact_hash)
 
     @timed_query
     def get_fact(self, fact_hash: str) -> Optional[Fact]:
@@ -157,7 +212,7 @@ class FactIndexManager:
         Returns:
             Set of fact hashes
         """
-        return self.perf.find_facts_by_entity(entity)
+        return set(self.perf.find_facts_by_entity(entity))
 
     @timed_query
     def query_by_attribute(self, attribute: str) -> Set[str]:
@@ -169,7 +224,7 @@ class FactIndexManager:
         Returns:
             Set of fact hashes
         """
-        return self.perf.find_facts_by_attribute(attribute)
+        return set(self.perf.find_facts_by_attribute(attribute))
 
     @timed_query
     def query_by_entity_attribute(self, entity: str, attribute: str) -> Set[str]:
@@ -182,7 +237,7 @@ class FactIndexManager:
         Returns:
             Set of fact hashes
         """
-        return self.perf.find_facts_by_entity_attribute(entity, attribute)
+        return set(self.perf.find_facts_by_entity_attribute(entity, attribute))
 
     @timed_query
     def detect_conflicts_for_fact(
@@ -199,7 +254,7 @@ class FactIndexManager:
         """
         return self.conflict_detector.detect_conflicts(new_fact, existing_facts)
 
-    def get_index_statistics(self) -> Dict[str, any]:
+    def get_index_statistics(self) -> Dict[str, Any]:
         """Get comprehensive index and performance statistics.
 
         Returns:
@@ -267,7 +322,7 @@ class QueryOptimizer:
         query_key = self.optimize_entity_query(entity)
 
         # Check query cache first
-        cached_result = self.perf.query_cache.get(query_key)
+        cached_result = self.perf.query_cache_get(query_key)
         if cached_result is not None:
             return cached_result
 
@@ -275,7 +330,7 @@ class QueryOptimizer:
         result = self.index_manager.query_by_entity(entity)
 
         # Cache result
-        self.perf.query_cache.put(query_key, result)
+        self.perf.query_cache_put(query_key, result)
 
         return result
 
@@ -291,12 +346,12 @@ class QueryOptimizer:
         """
         query_key = self.optimize_attribute_query(attribute)
 
-        cached_result = self.perf.query_cache.get(query_key)
+        cached_result = self.perf.query_cache_get(query_key)
         if cached_result is not None:
             return cached_result
 
         result = self.index_manager.query_by_attribute(attribute)
-        self.perf.query_cache.put(query_key, result)
+        self.perf.query_cache_put(query_key, result)
 
         return result
 
@@ -313,12 +368,12 @@ class QueryOptimizer:
         """
         query_key = self.optimize_ea_query(entity, attribute)
 
-        cached_result = self.perf.query_cache.get(query_key)
+        cached_result = self.perf.query_cache_get(query_key)
         if cached_result is not None:
             return cached_result
 
         result = self.index_manager.query_by_entity_attribute(entity, attribute)
-        self.perf.query_cache.put(query_key, result)
+        self.perf.query_cache_put(query_key, result)
 
         return result
 
@@ -330,10 +385,9 @@ class QueryOptimizer:
         """
         # Invalidate entity-specific queries
         entity_key = self.optimize_entity_query(entity)
-        self.perf.query_cache.invalidate_pattern(entity_key)
-
-        # Invalidate entity-attribute queries
-        self.perf.query_cache.invalidate_pattern(f"ea:{entity}:")
+        self.perf.query_cache_invalidate_pattern(entity_key)
+        # Also invalidate entity+attribute patterns
+        self.perf.query_cache_invalidate_pattern(f"ea:{entity}:")
 
 
 class MemoryIndex:
@@ -439,7 +493,7 @@ class MemoryIndex:
         """
         return self.index_manager.detect_conflicts_for_fact(new_fact, existing_facts)
 
-    def get_statistics(self) -> Dict[str, any]:
+    def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive index statistics.
 
         Returns:

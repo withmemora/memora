@@ -497,4 +497,5 @@ def assign_confidence(extraction_type: str) -> float:
 
     return confidence_map.get(extraction_type, 0.45)  # Default to ambiguous
 
+
 # Improved spaCy NLP processing

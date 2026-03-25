@@ -461,7 +461,12 @@ class ConflictManager:
                 continue
 
         # Sort by detection time (newest first)
-        conflicts_with_context.sort(key=lambda x: x["detected_at"], reverse=True)
+        conflicts_with_context.sort(
+            key=lambda x: x["detected_at"].isoformat()
+            if hasattr(x["detected_at"], "isoformat")
+            else str(x["detected_at"]),
+            reverse=True,
+        )
 
         return conflicts_with_context[:limit]
 
@@ -479,7 +484,7 @@ class ConflictManager:
         )
 
         # Count conflicts by type (from open conflicts)
-        conflict_types = {}
+        conflict_types: dict[str, int] = {}
         if (self.conflicts_dir / "open").exists():
             for conflict_file in (self.conflicts_dir / "open").glob("*.json"):
                 try:
@@ -603,7 +608,7 @@ def create_enhanced_conflict_commands():
                 return
 
         # Get filtered conflicts
-        status = ConflictStatus.RESOLVED if resolved else ConflictStatus.UNRESOLVED
+        status = ConflictStatus.USER_RESOLVED if resolved else ConflictStatus.UNRESOLVED
         conflicts = manager.list_conflicts_with_context(
             since=since_date,
             search_term=search,
@@ -738,5 +743,6 @@ def create_enhanced_conflict_commands():
         "conflicts_resolve": conflicts_resolve,
         "conflicts_summary": conflicts_summary,
     }
+
 
 # Enhanced conflict resolution algorithms

@@ -1,7 +1,6 @@
 """Tests for memora package __init__.py."""
 
 
-
 def test_memora_store_import():
     """Test that MemoraStore can be imported from memora package."""
     from memora import MemoraStore

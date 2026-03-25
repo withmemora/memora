@@ -372,7 +372,7 @@ class ReadableMemoryManager:
 
     def list_memories_by_category(self, session_id: str) -> Dict[str, List[Dict[str, Any]]]:
         """List memories organized by categories."""
-        categorized = {}
+        categorized: dict[str, list] = {}
 
         for memory in self.readable_cache.values():
             for category in memory.categories:
@@ -428,7 +428,7 @@ class ReadableMemoryCLI:
     def __init__(self, memory_manager: ReadableMemoryManager):
         """Initialize CLI with memory manager."""
         self.memory_manager = memory_manager
-        self.current_session = None
+        self.current_session: str | None = None
 
     def start_session(self, branch_name: str = "main"):
         """Start a new memory session."""
@@ -448,9 +448,7 @@ class ReadableMemoryCLI:
         facts = extract_facts(thought)
 
         # Add to memory
-        result = self.memory_manager.add_message(
-            self.current_session, thought, "Understood!", facts
-        )
+        result = self.memory_manager.add_message(self.current_session, thought)
 
         # Show results
         if result["new_memories"]:
@@ -473,16 +471,16 @@ class ReadableMemoryCLI:
         if category:
             filters["category"] = category
 
-        results = self.memory_manager.search_memories(self.current_session, search_text, filters)
+        results = self.memory_manager.search_memories(self.current_session, search_text, category)
 
-        print(f"🔍 Found {results['total_found']} memories")
+        print(f"🔍 Found {len(results)} memories")
         if search_text:
             print(f"Search: '{search_text}'")
-        if filters:
-            print(f"Filters: {filters}")
+        if category:
+            print(f"Category: {category}")
         print("-" * 50)
 
-        for memory in results["memories"]:
+        for memory in results:
             date = memory["created_at"][:10]
             categories = ", ".join(memory["categories"][:2])  # Show first 2
             print(f"[{date}] {memory['memory']}")

@@ -151,7 +151,7 @@ def retrieve_by_time(start: str, end: str, store: ObjectStore) -> list[Fact]:
     Returns:
         List of facts in time range
     """
-    facts = []
+    facts: list = []
 
     # Parse time range
     try:

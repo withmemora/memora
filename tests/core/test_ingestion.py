@@ -1,6 +1,5 @@
 """Tests for NLP ingestion pipeline."""
 
-
 from memora.core.ingestion import (
     assign_confidence,
     extract_facts,
