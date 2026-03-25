@@ -1,0 +1,149 @@
+name: Code Quality
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    branches: ["main", "dev"]
+  schedule:
+    # Run weekly on Sundays at 2 AM UTC
+    - cron: '0 2 * * 0'
+
+jobs:
+  complexity:
+    name: "Code Complexity Analysis"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install radon
+          pip install xenon
+
+      - name: Check cyclomatic complexity
+        run: |
+          radon cc src/ --min B
+          xenon --max-absolute B --max-modules B --max-average A src/
+
+      - name: Check maintainability index
+        run: radon mi src/ --min B
+
+  dependency-check:
+    name: "Dependency Vulnerability Scan"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Export requirements
+        run: poetry export -f requirements.txt --output requirements.txt
+
+      - name: Run safety check
+        run: |
+          pip install safety
+          safety check -r requirements.txt --json --output safety-report.json
+        continue-on-error: true
+
+      - name: Upload safety report
+        uses: actions/upload-artifact@v4
+        with:
+          name: safety-report
+          path: safety-report.json
+
+  license-check:
+    name: "License Compliance"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Check licenses
+        run: |
+          poetry export -f requirements.txt --output requirements.txt
+          pip install pip-licenses
+          pip-licenses --from=mixed --format=json --output-file=licenses.json
+          pip-licenses --from=mixed --allow-only="MIT;BSD;Apache;Apache 2.0;Apache Software License;ISC;Mozilla Public License 2.0 (MPL 2.0);Python Software Foundation License;BSD License;BSD-3-Clause;BSD-2-Clause"
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report
+          path: licenses.json
+
+  performance:
+    name: "Performance Benchmarks"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Download spaCy model
+        run: poetry run python -m spacy download en_core_web_sm
+
+      - name: Run performance tests
+        run: |
+          poetry run python -c "
+          import time
+          from memora import MemoraStore
+          
+          # Performance test: Memory operations
+          store = MemoraStore()
+          
+          # Test add performance
+          start = time.time()
+          for i in range(100):
+              store.add(f'Performance test memory {i}')
+          add_time = time.time() - start
+          
+          # Test search performance  
+          start = time.time()
+          for i in range(10):
+              results = store.search('Performance')
+          search_time = time.time() - start
+          
+          print(f'Add 100 memories: {add_time:.2f}s ({100/add_time:.1f} ops/s)')
+          print(f'Search 10 times: {search_time:.2f}s ({10/search_time:.1f} ops/s)')
+          
+          # Fail if performance is too slow
+          if add_time > 10.0:  # Should add 100 memories in under 10s
+              raise Exception(f'Add performance too slow: {add_time:.2f}s')
+          if search_time > 2.0:  # Should search 10 times in under 2s  
+              raise Exception(f'Search performance too slow: {search_time:.2f}s')
+          "
