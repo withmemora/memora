@@ -13,7 +13,7 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #000000;
             min-height: 100vh;
             padding: 20px;
         }
@@ -21,11 +21,11 @@
         .container {
             max-width: 1200px;
             margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
+            background: #000000;
+            border: 1px solid #333;
             border-radius: 20px;
             padding: 30px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 0 40px rgba(255, 255, 255, 0.05);
         }
 
         .header {
@@ -35,24 +35,23 @@
 
         .header h1 {
             font-size: 2.5em;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
+            color: #ffffff;
             margin-bottom: 10px;
+            font-weight: 300;
+            letter-spacing: 4px;
         }
 
         .header p {
-            color: #666;
+            color: #888;
             font-size: 1.1em;
         }
 
         .input-section {
             margin-bottom: 30px;
             padding: 20px;
-            background: #f8fafc;
+            background: #111;
             border-radius: 15px;
-            border: 2px solid #e2e8f0;
+            border: 1px solid #333;
         }
 
         .input-group {
@@ -64,44 +63,90 @@
         .memory-input {
             flex: 1;
             padding: 12px 16px;
-            border: 2px solid #e2e8f0;
+            border: 1px solid #333;
             border-radius: 10px;
             font-size: 16px;
+            background: #000;
+            color: #fff;
             transition: border-color 0.3s;
         }
 
         .memory-input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #fff;
+        }
+
+        .memory-input::placeholder {
+            color: #666;
         }
 
         .btn {
             padding: 12px 24px;
-            border: none;
+            border: 1px solid #fff;
             border-radius: 10px;
             font-weight: 600;
             cursor: pointer;
             transition: all 0.3s;
+            font-size: 14px;
         }
 
         .btn-primary {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
+            background: #ffffff;
+            color: #000000;
         }
 
         .btn-primary:hover {
             transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 5px 20px rgba(255, 255, 255, 0.2);
         }
 
         .btn-secondary {
-            background: #f1f5f9;
-            color: #64748b;
-            border: 2px solid #e2e8f0;
+            background: transparent;
+            color: #fff;
+            border: 1px solid #333;
         }
 
         .btn-secondary:hover {
-            background: #e2e8f0;
+            background: #111;
+        }
+
+        .branch-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #111;
+            border-radius: 15px;
+            border: 1px solid #333;
+        }
+
+        .branch-section h3 {
+            color: #fff;
+            margin-bottom: 15px;
+            font-weight: 400;
+        }
+
+        .branch-controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .branch-select {
+            padding: 10px 16px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            font-size: 14px;
+            background: #000;
+            color: #fff;
+            min-width: 200px;
+        }
+
+        .current-branch {
+            color: #00ff00;
+            font-weight: 600;
+            padding: 10px 16px;
+            background: #111;
+            border-radius: 8px;
+            border: 1px solid #333;
         }
 
         .search-section {
@@ -111,9 +156,20 @@
         .search-input {
             width: 100%;
             padding: 12px 16px;
-            border: 2px solid #e2e8f0;
+            border: 1px solid #333;
             border-radius: 10px;
             font-size: 16px;
+            background: #000;
+            color: #fff;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #fff;
+        }
+
+        .search-input::placeholder {
+            color: #666;
         }
 
         .stats {
@@ -124,12 +180,12 @@
         }
 
         .stat-card {
-            background: linear-gradient(135deg, #667eea, #764ba2);
-            color: white;
+            background: #111;
+            border: 1px solid #333;
+            color: #fff;
             padding: 20px;
             border-radius: 15px;
             text-align: center;
-            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.2);
         }
 
         .stat-number {
@@ -145,21 +201,21 @@
         }
 
         .memory-card {
-            background: white;
+            background: #111;
+            border: 1px solid #333;
             border-radius: 15px;
             padding: 20px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-            border-left: 4px solid #667eea;
             transition: transform 0.3s;
         }
 
         .memory-card:hover {
             transform: translateY(-5px);
+            border-color: #555;
         }
 
         .memory-text {
             font-size: 1.1em;
-            color: #2d3748;
+            color: #fff;
             margin-bottom: 15px;
             line-height: 1.5;
         }
@@ -172,8 +228,8 @@
         }
 
         .tag {
-            background: #e2e8f0;
-            color: #64748b;
+            background: #222;
+            color: #888;
             padding: 4px 8px;
             border-radius: 6px;
             font-size: 0.8em;
@@ -181,22 +237,25 @@
         }
 
         .tag.confidence {
-            background: #dcfce7;
-            color: #166534;
+            background: #1a1a1a;
+            color: #00ff00;
+            border: 1px solid #333;
         }
 
         .tag.category {
-            background: #fef3c7;
-            color: #92400e;
+            background: #1a1a1a;
+            color: #fff;
+            border: 1px solid #333;
         }
 
         .tag.entity {
-            background: #dbeafe;
-            color: #1e40af;
+            background: #1a1a1a;
+            color: #888;
+            border: 1px solid #333;
         }
 
         .timestamp {
-            color: #94a3b8;
+            color: #666;
             font-size: 0.85em;
             margin-left: auto;
         }
@@ -204,45 +263,65 @@
         .loading {
             text-align: center;
             padding: 40px;
-            color: #64748b;
+            color: #666;
         }
 
         .error {
-            background: #fee2e2;
-            color: #dc2626;
+            background: #1a0000;
+            color: #ff4444;
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
+            border: 1px solid #ff4444;
         }
 
         .success {
-            background: #dcfce7;
-            color: #166534;
+            background: #001a00;
+            color: #00ff00;
             padding: 15px;
             border-radius: 10px;
             margin-bottom: 20px;
+            border: 1px solid #00ff00;
         }
 
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #64748b;
+            color: #666;
         }
 
         .empty-state h3 {
             margin-bottom: 10px;
-            color: #475569;
+            color: #888;
+        }
+
+        .info-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 10px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>Memora</h1>
+            <h1>MEMORA</h1>
             <p>Git-style versioned memory for LLMs</p>
         </div>
 
         <div id="status"></div>
+
+        <div class="branch-section">
+            <h3>Current Branch</h3>
+            <div class="branch-controls">
+                <div class="current-branch" id="currentBranch">main</div>
+                <select id="branchSelect" class="branch-select" onchange="switchBranch(this.value)">
+                    <option value="">Select a branch...</option>
+                </select>
+                <button onclick="createNewBranch()" class="btn btn-secondary">Create Branch</button>
+            </div>
+            <p class="info-text">Switch branches to see different memory contexts</p>
+        </div>
 
         <div class="input-section">
             <div class="input-group">
@@ -251,10 +330,11 @@
                     id="memoryInput" 
                     class="memory-input" 
                     placeholder="Tell me something about yourself... (e.g., 'My name is John', 'I prefer Python programming')"
+                    onkeypress="handleKeyPress(event)"
                 >
                 <button onclick="addMemory()" class="btn btn-primary">Add Memory</button>
             </div>
-            <div style="font-size: 0.9em; color: #64748b; margin-top: 10px;">
+            <div class="info-text">
                 Tip: Use phrases like "My name is...", "I work at...", "I prefer...", "I live in..." for best extraction
             </div>
         </div>
@@ -278,6 +358,10 @@
                 <div class="stat-number" id="lastAdded">-</div>
                 <div>Last Added</div>
             </div>
+            <div class="stat-card">
+                <div class="stat-number" id="totalBranches">1</div>
+                <div>Branches</div>
+            </div>
         </div>
 
         <div id="memoriesContainer">
@@ -288,6 +372,8 @@
     <script>
         let sessionId = null;
         let allMemories = [];
+        let branches = ['main'];
+        let currentBranch = 'main';
 
         // Initialize the dashboard
         async function init() {
@@ -299,11 +385,104 @@
                 const sessionData = await sessionResponse.json();
                 sessionId = sessionData.session_id;
                 
+                // Load branches
+                await loadBranches();
+                
                 // Load existing memories
                 await loadMemories();
                 showStatus('Dashboard initialized successfully', 'success');
             } catch (error) {
                 showStatus('Failed to initialize dashboard: ' + error.message, 'error');
+            }
+        }
+
+        // Load branches
+        async function loadBranches() {
+            try {
+                const response = await fetch('/branches');
+                const data = await response.json();
+                
+                if (data.success && data.data) {
+                    branches = data.data.branches || ['main'];
+                    updateBranchUI();
+                }
+            } catch (error) {
+                console.log('Using default branch');
+            }
+        }
+
+        // Update branch UI
+        function updateBranchUI() {
+            const select = document.getElementById('branchSelect');
+            const currentDisplay = document.getElementById('currentBranch');
+            const statsBranches = document.getElementById('totalBranches');
+            
+            select.innerHTML = '<option value="">Select a branch...</option>';
+            branches.forEach(branch => {
+                const option = document.createElement('option');
+                option.value = branch;
+                option.textContent = branch;
+                if (branch === currentBranch) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+            
+            currentDisplay.textContent = currentBranch;
+            statsBranches.textContent = branches.length;
+        }
+
+        // Switch branch
+        async function switchBranch(branchName) {
+            if (!branchName || branchName === currentBranch) return;
+            
+            try {
+                const response = await fetch(`/branches/${branchName}`, {
+                    method: 'PUT'
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    currentBranch = branchName;
+                    updateBranchUI();
+                    await loadMemories();
+                    showStatus(`Switched to branch: ${branchName}`, 'success');
+                } else {
+                    showStatus('Failed to switch branch', 'error');
+                }
+            } catch (error) {
+                showStatus('Error switching branch: ' + error.message, 'error');
+            }
+        }
+
+        // Create new branch
+        async function createNewBranch() {
+            const branchName = prompt('Enter new branch name:');
+            if (!branchName) return;
+            
+            try {
+                const response = await fetch('/branches', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: branchName })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    branches.push(branchName);
+                    currentBranch = branchName;
+                    updateBranchUI();
+                    await loadMemories();
+                    showStatus(`Created and switched to branch: ${branchName}`, 'success');
+                } else {
+                    showStatus('Failed to create branch', 'error');
+                }
+            } catch (error) {
+                showStatus('Error creating branch: ' + error.message, 'error');
             }
         }
 
@@ -325,7 +504,8 @@
                     },
                     body: JSON.stringify({
                         message: text,
-                        source: 'dashboard'
+                        source: 'dashboard',
+                        branch: currentBranch
                     })
                 });
 
@@ -333,7 +513,7 @@
                 
                 if (result.success) {
                     const memoriesCreated = result.data?.memories_created || 0;
-                    showStatus(`Added ${memoriesCreated} memories successfully`, 'success');
+                    showStatus(`Added ${memoriesCreated} memories successfully to ${currentBranch}`, 'success');
                     input.value = '';
                     await loadMemories();
                 } else {
@@ -353,6 +533,7 @@
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
+                        branch: currentBranch,
                         limit: 100
                     })
                 });
@@ -401,19 +582,26 @@
             
             return `
                 <div class="memory-card">
-                    <div class="memory-text">${memory.memory}</div>
+                    <div class="memory-text">${escapeHtml(memory.memory || memory.content || '')}</div>
                     <div class="memory-meta">
                         <span class="tag confidence">${confidence}% confident</span>
                         ${memory.categories?.map(cat => 
-                            `<span class="tag category">${cat}</span>`
+                            `<span class="tag category">${escapeHtml(cat)}</span>`
                         ).join('') || ''}
                         ${memory.entities?.map(entity => 
-                            `<span class="tag entity">${entity}</span>`
+                            `<span class="tag entity">${escapeHtml(entity)}</span>`
                         ).join('') || ''}
                         <span class="timestamp">${timestamp}</span>
                     </div>
                 </div>
             `;
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
 
         // Search memories
@@ -426,7 +614,7 @@
             }
 
             const filteredMemories = allMemories.filter(memory =>
-                memory.memory.toLowerCase().includes(searchTerm) ||
+                (memory.memory || memory.content || '').toLowerCase().includes(searchTerm) ||
                 memory.categories?.some(cat => cat.toLowerCase().includes(searchTerm)) ||
                 memory.entities?.some(entity => entity.toLowerCase().includes(searchTerm))
             );
@@ -471,14 +659,16 @@
         }
 
         // Handle Enter key in input fields
+        function handleKeyPress(e) {
+            if (e.key === 'Enter') {
+                addMemory();
+            }
+        }
+
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('memoryInput').addEventListener('keypress', function(e) {
-                if (e.key === 'Enter') addMemory();
-            });
-            
             init();
         });
     </script>
 </body>
 </html>
-# Web dashboard for memory visualization
