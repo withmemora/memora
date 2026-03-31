@@ -1,0 +1,15 @@
+I am Alex Johnson, a Senior Software Engineer at DataFlow Corporation. 
+
+I have 8 years of experience in backend development, specializing in Python, Django, and PostgreSQL databases. My current project involves building a microservices architecture using Docker and Kubernetes.
+
+I prefer using VS Code as my IDE and GitHub for version control. My email is alex.johnson@dataflow.com and I work remotely from San Francisco.
+
+Key skills:
+- Python (Django, FastAPI)
+- Database design (PostgreSQL, MongoDB)  
+- DevOps (Docker, Kubernetes, CI/CD)
+- Cloud platforms (AWS, GCP)
+
+Current project: UserAuth Service
+Technology stack: Python, FastAPI, PostgreSQL, Redis
+Deadline: April 30th, 2026

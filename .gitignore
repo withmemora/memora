@@ -20,6 +20,10 @@ venv/
 ENV/
 env/
 
+# Development folder and documentation
+dev/
+*.md
+!README.md
 # Testing
 .pytest_cache/
 .coverage
@@ -64,15 +68,6 @@ assets/logo-frame.png
 # Git automation scripts
 git_history.py
 
-# Documentation files to exclude (keep local for development)
-COMPLETION_ROADMAP.md
-PROJECT_STRUCTURE.md
-CLAUDE_COMPLETE_SPEC.md
-FOSS_HACK_IMPLEMENTATION_GUIDE.md
-WEBSITE_DOCS_LICENSING.md
-WEBSITE_DEMO_INTERACTIVE.md
-WEBSITE_DOCUMENTATION_COMPLETE.md
-WEBSITE_LANDING_PAGE.md
-WEBSITE_REPOSITORY_SETUP.md
+# Git automation scripts
 auto_commit.py
 memora/
