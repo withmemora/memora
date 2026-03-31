@@ -158,9 +158,23 @@ def ingest(
         try:
             facts = processor.process_file(str(file_path))
 
-            # Store each fact
+            # Store each fact and commit
             for fact in facts:
                 memory_store.add(fact.content, source=fact.source)
+
+            # Commit after processing each file
+            if facts:
+                try:
+                    from memora.interface.api import MemoraStore
+
+                    store = MemoraStore(memory_path)
+                    # Trigger a commit by adding a dummy message
+                    store.add(
+                        f"[File: {file_path.name}] - Extracted {len(facts)} facts",
+                        source=f"system:commit:{file_path.name}",
+                    )
+                except:
+                    pass
 
             total_facts += len(facts)
             successful += 1
