@@ -112,7 +112,7 @@ app.add_middleware(
 @app.get("/dashboard")
 async def dashboard():
     """Serve the web dashboard."""
-    dashboard_path = Path(__file__).parent.parent.parent.parent / "dashboard.html"
+    dashboard_path = Path(__file__).parent.parent.parent.parent / "dashboard_local.html"
     if dashboard_path.exists():
         return FileResponse(dashboard_path)
     else:
