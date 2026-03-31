@@ -5,278 +5,250 @@
 </p>
 
 <p align="center">
-  Git-style versioned memory for any LLM.
+  <strong>Git-style versioned memory for any LLM.</strong>
 </p>
 
 <p align="center">
   <a href="https://memora-website-tan.vercel.app/">Product Site</a>
+  &nbsp;·&nbsp;
+  <a href="#quick-start">Quick Start</a>
+  &nbsp;·&nbsp;
+  <a href="#commands">Commands</a>
+  &nbsp;·&nbsp;
+  <a href="#architecture">Architecture</a>
 </p>
 
 ---
 
-## Overview
+## What Is Memora?
 
-Memora is a persistent, versioned memory system for Large Language Models. It automatically captures, stores, and retrieves facts from your conversations with Ollama (or any LLM). Every fact is stored with a SHA-256 hash, organized into branches, and committed with full history tracking. Contradictions between facts are detected and resolved automatically. All data stays local -- nothing leaves your machine.
+LLMs don't remember you between conversations. Memora fixes that.
 
-## Prerequisites
+Memora sits between you and your LLM (Ollama or any other) and automatically extracts facts from every conversation. It stores them as structured, versioned, searchable memories -- all locally on your machine. Think of it as Git for your LLM's memory: every fact is hashed, every change is committed, every contradiction is detected, and you can branch memories by context just like code.
 
-- Python 3.11 or higher
-- [Poetry](https://python-poetry.org/docs/#installation) for dependency management
-- [Ollama](https://ollama.ai/) (optional, for LLM integration)
+**Key capabilities:**
 
-## Installation
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd Memora
-
-# Install dependencies
-poetry install
-
-# Download the required spaCy English language model
-poetry run python -m spacy download en_core_web_sm
-
-# Initialize memory storage
-poetry run memora init
-```
+- **Automatic memory capture** -- intercepts Ollama conversations and extracts facts without any manual effort
+- **Versioned storage** -- every memory change is committed with full history, like Git
+- **Conflict detection** -- catches contradictions (e.g., "I live in NYC" vs "I live in LA") and resolves them
+- **Branch-based organization** -- separate memories by project, persona, or context
+- **Document ingestion** -- extract memories from TXT, Markdown, and PDF files
+- **Local-first** -- nothing leaves your machine, no cloud dependencies
+- **REST API + Dashboard** -- programmatic access and a web UI for browsing memories
 
 ## Quick Start
 
-### Option 1: Interactive Setup (Recommended)
+### 1. Install
 
 ```bash
-poetry run memora setup
+git clone https://github.com/withmemora/memora.git
+cd memora
+poetry install
+poetry run python -m spacy download en_core_web_sm
 ```
 
-The setup wizard checks for Ollama, initializes storage, and guides you through configuration.
-
-### Option 2: Manual Setup with Proxy
+### 2. Initialize
 
 ```bash
-# Start the proxy in background
+poetry run memora init
+```
+
+### 3. Start Using It
+
+**Option A -- Interactive chat with memory:**
+```bash
+poetry run memora chat
+```
+
+**Option B -- Automatic capture via Ollama proxy:**
+```bash
 poetry run memora proxy start --background
+# Then set OLLAMA_HOST=http://localhost:11435 and use Ollama normally
+```
 
-# Set environment variable to route Ollama through proxy
-# Windows PowerShell:
-$env:OLLAMA_HOST='http://localhost:11435'
+**Option C -- Add memories manually:**
+```bash
+poetry run memora add "My name is John. I work at Google."
+poetry run memora search "John"
+```
 
-# Mac/Linux:
-export OLLAMA_HOST=http://localhost:11435
-
-# Use Ollama normally -- memories are captured automatically
-ollama run llama3.2:3b
-
-# Check captured memories
-poetry run memora search ""
+**Option D -- Web dashboard:**
+```bash
+poetry run python -c "from memora.interface.server import start_server; start_server()"
+# Open http://localhost:8000/dashboard
 ```
 
 ## Commands
 
-### Core Commands
+### Memory
 
-```bash
-# Initialize memory repository
-poetry run memora init
-poetry run memora init --path /custom/path
+| Command | Description |
+|---------|-------------|
+| `memora add "text"` | Add a memory from text |
+| `memora search "query"` | Search memories |
+| `memora stats` | Show memory statistics |
+| `memora chat` | Interactive chat with memory context |
 
-# Show version
-poetry run memora version
+### Branches
 
-# Interactive setup wizard
-poetry run memora setup
+| Command | Description |
+|---------|-------------|
+| `memora branch list` | List all branches |
+| `memora branch create <name>` | Create a new branch |
+| `memora branch switch <name>` | Switch to a branch |
+| `memora branch delete <name>` | Delete a branch |
+
+### Documents
+
+| Command | Description |
+|---------|-------------|
+| `memora ingest file.txt` | Extract memories from a file |
+| `memora ingest docs/ --recursive` | Process a directory of files |
+
+### Proxy (Ollama Integration)
+
+| Command | Description |
+|---------|-------------|
+| `memora proxy start` | Start the Ollama proxy |
+| `memora proxy start --background` | Run as background daemon |
+| `memora proxy status` | Check proxy status |
+| `memora proxy stop` | Stop the proxy |
+
+### Setup
+
+| Command | Description |
+|---------|-------------|
+| `memora init` | Initialize memory storage |
+| `memora setup` | Interactive setup wizard |
+| `memora version` | Show version |
+
+## How It Works
+
+### The Core Idea
+
+When you talk to an LLM, Memora extracts structured facts from the conversation:
+
+```
+"My name is Sarah. I live in Seattle and work at Microsoft. I prefer Python."
 ```
 
-### Memory Operations
+Becomes:
 
-```bash
-# Add a memory manually
-poetry run memora add "My name is John"
-poetry run memora add "Project deadline is March 30" --source "meeting-notes"
+| Entity | Attribute | Value | Confidence |
+|--------|-----------|-------|------------|
+| user | name | Sarah | 0.95 |
+| user | location | Seattle | 0.92 |
+| user | employer | Microsoft | 0.95 |
+| user | preference | Python | 0.90 |
 
-# Search memories
-poetry run memora search "Python programming"
-poetry run memora search "project deadline" --limit 20
+Each fact gets a SHA-256 hash, is stored in a content-addressable object store, and is committed with version tracking. When you later say "I moved to Portland," Memora detects the conflict with "Seattle" and flags it for resolution.
 
-# View memory statistics
-poetry run memora stats
+### The NLP Pipeline
+
+Memora uses a 5-stage extraction pipeline:
+
+1. **Text normalization** -- splits input into sentences using spaCy
+2. **Pattern matching** -- 20+ regex rules for first-person statements ("My name is...", "I work at...", "I prefer...")
+3. **Named Entity Recognition** -- spaCy NER detects people, organizations, locations, dates
+4. **Code extraction** -- detects code blocks, function definitions, class declarations
+5. **Deduplication** -- identical facts from different sources collapse into one
+
+### Storage Architecture
+
+```
+memora_data/
+└── .memora/
+    ├── objects/          # Content-addressable fact store (SHA-256)
+    │   ├── ab/
+    │   │   └── cdef1234...  # Compressed fact data
+    │   └── cd/
+    │       └── ef567890...
+    ├── refs/heads/       # Branch pointers (like Git refs)
+    │   ├── main
+    │   └── work
+    ├── HEAD              # Current branch reference
+    ├── staging/          # Facts pending commit
+    ├── conflicts/        # Detected contradictions
+    │   ├── open/
+    │   └── resolved/
+    └── index/            # Performance indices
 ```
 
-### Chat with Memory
+### Branch Isolation
 
-```bash
-# Interactive chat with memory context
-poetry run memora chat
-poetry run memora chat --verbose              # Show memory extractions
-poetry run memora chat --model llama3.2:3b    # Specify model
-poetry run memora chat --branch work           # Use specific branch
+Each branch has its own commit chain. Facts added on one branch don't appear on another until you switch. This lets you maintain separate memory contexts -- work projects, personal info, different LLM personas -- without cross-contamination.
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Interfaces                        │
+│  CLI (Typer)  │  REST API (FastAPI)  │  Dashboard   │
+├─────────────────────────────────────────────────────┤
+│                    AI Layer                          │
+│  Ollama Proxy  │  Chat Engine  │  File Processor    │
+├─────────────────────────────────────────────────────┤
+│                   Core Engine                        │
+│  Ingestion Pipeline  │  Object Store  │  Conflicts  │
+│  Branch Management   │  Commits       │  Search     │
+├─────────────────────────────────────────────────────┤
+│                   Shared Models                      │
+│  Fact  │  MemoryTree  │  MemoryCommit  │  Conflict  │
+└─────────────────────────────────────────────────────┘
 ```
 
-### Document Ingestion
+## Tech Stack
 
-```bash
-# Ingest a single document (TXT, MD, PDF)
-poetry run memora ingest document.txt
+| Layer | Technology |
+|-------|------------|
+| Language | Python 3.11+ |
+| NLP | spaCy 3.7+ (en_core_web_sm) |
+| CLI | Typer + Rich |
+| API | FastAPI + Uvicorn |
+| LLM Interface | Ollama Python SDK |
+| Validation | Pydantic 2.7+ |
+| File Processing | chardet, markdown, PyPDF2 |
+| Testing | pytest, pytest-cov |
+| Linting | Ruff |
+| Type Checking | mypy |
+| Dependency Management | Poetry |
 
-# Ingest a directory recursively
-poetry run memora ingest documents/ --recursive
+## Prerequisites
 
-# Ingest specific file types
-poetry run memora ingest docs/ --file-types txt,md
-```
-
-### Branch Management
-
-```bash
-# List branches
-poetry run memora branch list
-
-# Create a new branch
-poetry run memora branch create work-project
-
-# Switch to a branch
-poetry run memora branch switch personal
-
-# Delete a branch
-poetry run memora branch delete old-branch
-```
-
-### Proxy Management
-
-```bash
-# Start proxy (foreground)
-poetry run memora proxy start
-
-# Start proxy (background daemon)
-poetry run memora proxy start --background
-
-# Start proxy with custom port
-poetry run memora proxy start --port 11436
-
-# Check proxy status
-poetry run memora proxy status
-
-# Stop proxy
-poetry run memora proxy stop
-```
-
-### API Server
-
-```bash
-# Start the FastAPI REST API server
-poetry run python -c "from memora.interface.server import start_server; start_server()"
-
-# Start with custom host/port
-poetry run python -c "from memora.interface.server import start_server; start_server(host='0.0.0.0', port=8080)"
-```
-
-After starting the server:
-- API documentation: `http://localhost:8000/docs`
-- Web dashboard: `http://localhost:8000/dashboard`
+- Python 3.11 or higher
+- [Poetry](https://python-poetry.org/docs/#installation)
+- [Ollama](https://ollama.ai/) (optional, for LLM integration)
 
 ## Development
 
-### Testing
-
 ```bash
-# Run all tests
+# Run tests
 poetry run pytest
 
-# Run with verbose output
-poetry run pytest -v
+# Run with coverage
+poetry run pytest --cov=src/memora --cov-report=html
 
-# Run with coverage report
-poetry run pytest --cov=src/memora --cov-report=term --cov-report=html
-
-# Run specific test file
-poetry run pytest tests/core/test_store.py
-```
-
-### Code Quality
-
-```bash
-# Lint code
+# Lint
 poetry run ruff check src/ tests/
 
-# Format code
+# Format
 poetry run ruff format src/ tests/
 
-# Type checking
+# Type check
 poetry run mypy src/memora/
-```
 
-### Build for Distribution
-
-```bash
-# Build distributable package
+# Build package
 poetry build
-
-# Output: dist/memora-0.1.0-py3-none-any.whl
-#         dist/memora-0.1.0.tar.gz
 ```
 
 ## Environment Variables
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
-| `OLLAMA_HOST` | Routes Ollama through Memora proxy | `http://localhost:11434` |
-| `MEMORA_HOME` | Custom repository location | `./memora_data` |
-| `MEMORA_BRANCH` | Default branch override | `main` |
+| `OLLAMA_HOST` | Ollama endpoint | `http://localhost:11434` |
+| `MEMORA_MEMORY_PATH` | Memory storage path | `./memora_data` |
+| `MEMORA_PROXY_PORT` | Proxy port | `11435` |
 | `MEMORA_LOG_LEVEL` | Logging verbosity | `INFO` |
-| `MEMORA_PROXY_PORT` | Proxy port override | `11435` |
-| `MEMORA_MEMORY_PATH` | Path to memory storage | `./memora_data` |
-
-## Architecture
-
-Memora uses a three-layer architecture:
-
-**Core Engine** (`src/memora/core/`)
-- Content-addressable storage with SHA-256 hashing
-- Git-style versioning with commits and branches
-- Conflict detection and resolution
-- NLP fact extraction pipeline using spaCy
-
-**Interfaces** (`src/memora/interface/` and `src/memora/ai/`)
-- CLI built with Typer
-- REST API with FastAPI
-- Ollama HTTP proxy for transparent memory capture
-- File processor for TXT, MD, and PDF ingestion
-- LangChain and LlamaIndex integrations
-
-**Shared** (`src/memora/shared/`)
-- Data models (Fact, MemoryTree, MemoryCommit, Conflict)
-- Abstract interfaces and custom exceptions
-
-## How Memory Storage Works
-
-Memora stores facts as structured triples (entity, attribute, value) with SHA-256 content-addressable hashes. Each fact is deduplicated -- identical semantic content from different sources maps to the same hash. Facts are organized into memory trees and versioned through commits, similar to Git.
-
-**Fact lifecycle:**
-1. Text enters via CLI, chat, proxy, or file ingestion
-2. NLP pipeline extracts structured facts using spaCy + pattern matching
-3. Each fact gets a hash computed from entity + attribute + value only (metadata excluded)
-4. Facts are written to content-addressable storage with zlib compression
-5. Conflict detection runs against existing facts
-6. Facts are staged and committed with parent pointers for version history
-
-**Data retrieval:**
-- `search` scans all fact objects in the store (not just current commit tree) to ensure nothing is missed
-- The readable memory cache persists to disk between sessions
-- Branches isolate memory contexts -- each branch has its own commit chain
-
-## Tech Stack
-
-- **Language:** Python 3.11+
-- **Dependency Manager:** Poetry
-- **NLP:** spaCy 3.7+ (en_core_web_sm)
-- **CLI:** Typer 0.9+ with Rich
-- **API:** FastAPI 0.119+, Uvicorn 0.30+
-- **LLM Interface:** Ollama Python SDK 0.2+
-- **Data Validation:** Pydantic 2.7+
-- **File Processing:** chardet, markdown, PyPDF2
-- **Testing:** pytest, pytest-cov, pytest-asyncio
-- **Linting:** Ruff
-- **Type Checking:** mypy
 
 ## License
 
