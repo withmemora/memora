@@ -308,7 +308,7 @@ def add(
 
     try:
         result = memory_store.add(text, source=source)
-        facts_count = result.get("facts_extracted", 0)
+        facts_count = result.get("memories_created", 0)
 
         console.print(f" Memory added successfully", style="green")
         console.print(f"Extracted {facts_count} fact(s)", style="dim")
