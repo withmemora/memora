@@ -3,7 +3,7 @@ name = "memora"
 version = "0.1.0"
 description = "Git-style versioned memory for any LLM"
 authors = ["memora-ai"]
-license = "MIT"
+license = "Apache-2.0"
 packages = [{include = "memora", from = "src"}]
 
 [tool.poetry.dependencies]
