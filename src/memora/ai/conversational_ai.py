@@ -87,7 +87,7 @@ class MemoraChat:
         user_facts = extract_facts(user_message, source=source)
 
         if verbose and user_facts:
-            print(f"📝 Extracted {len(user_facts)} memories from your message")
+            print(f"Extracted {len(user_facts)} memories from your message")
 
         # 2. Store user memories
         if user_facts:
@@ -112,7 +112,7 @@ class MemoraChat:
             ai_facts = extract_facts(response, source=ai_source)
 
             if verbose and ai_facts:
-                print(f"🤖 Extracted {len(ai_facts)} memories from AI response")
+                print(f"Extracted {len(ai_facts)} memories from AI response")
 
             if ai_facts:
                 self.memory_store.add(response, source=ai_source)
