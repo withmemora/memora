@@ -76,7 +76,7 @@ class FileProcessor:
 
             with open(path, "rb") as f:
                 raw_data = f.read()
-                result = chardet.detect(raw_data)
+                result = chardet.detect(raw_data)  # type: ignore[assignment]
                 encoding = result["encoding"] or "utf-8"
         except ImportError:
             # Fallback to utf-8 if chardet not available
