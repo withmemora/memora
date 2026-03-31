@@ -506,8 +506,8 @@ def extract_code_facts(text: str, source: str) -> list[Fact]:
     facts: list[Fact] = []
     observed_at = datetime.now(timezone.utc)
 
-    # Extract code blocks with language specification
-    code_block_pattern = r"```(\w+)?\n(.*?)\n```"
+    # Extract code blocks with language specification (handles trailing spaces, no newline)
+    code_block_pattern = r"```(\w*)\s*\n?(.*?)```"
     code_blocks = re.findall(code_block_pattern, text, re.DOTALL)
 
     for i, (language, code) in enumerate(code_blocks):
@@ -526,7 +526,7 @@ def extract_code_facts(text: str, source: str) -> list[Fact]:
             facts.append(fact)
 
     # Extract function definitions (Python-specific as main focus)
-    python_func_pattern = r"def\s+(\w+)\s*\([^)]*\):"
+    python_func_pattern = r"def\s+(\w+)\s*\([^)]*\)\s*:"
     python_funcs = re.findall(python_func_pattern, text)
 
     for func_name in python_funcs:
@@ -558,6 +558,24 @@ def extract_code_facts(text: str, source: str) -> list[Fact]:
             confidence=0.85,
         )
         facts.append(fact)
+
+    # Extract JavaScript/TypeScript function declarations
+    js_func_pattern = r"(?:function\s+(\w+)|const\s+(\w+)\s*=\s*(?:async\s+)?\([^)]*\)\s*=>)"
+    js_funcs = re.findall(js_func_pattern, text)
+    for match in js_funcs:
+        func_name = match[0] or match[1]
+        if func_name:
+            fact = Fact(
+                content=text,
+                content_type=ContentType.CODE_SNIPPET,
+                entity="user_code",
+                attribute="javascript_function",
+                value=func_name,
+                source=source,
+                observed_at=observed_at,
+                confidence=0.85,
+            )
+            facts.append(fact)
 
     return facts
 

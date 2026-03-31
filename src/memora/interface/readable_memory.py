@@ -227,6 +227,40 @@ class ReadableMemoryManager:
         # Session tracking (simplified implementation)
         self.sessions: Dict[str, str] = {}  # session_id -> branch_name
 
+        # Cache persistence file
+        self._cache_file = (
+            memory_root / ".memora" / "readable_cache.json"
+            if (memory_root / ".memora").exists()
+            else memory_root / "readable_cache.json"
+        )
+
+        # Load persisted cache if exists
+        self._load_cache()
+
+    def _load_cache(self):
+        """Load readable cache from disk."""
+        if not self._cache_file.exists():
+            return
+        try:
+            data = json.loads(self._cache_file.read_text())
+            for fact_hash, mem_data in data.get("cache", {}).items():
+                self.readable_cache[fact_hash] = ReadableMemory(**mem_data)
+            self.id_mapping = data.get("id_mapping", {})
+        except Exception:
+            pass
+
+    def _save_cache(self):
+        """Persist readable cache to disk."""
+        try:
+            data = {
+                "cache": {k: asdict(v) for k, v in self.readable_cache.items()},
+                "id_mapping": self.id_mapping,
+            }
+            self._cache_file.parent.mkdir(parents=True, exist_ok=True)
+            self._cache_file.write_text(json.dumps(data, indent=2))
+        except Exception:
+            pass
+
     def start_conversation(self, branch_name: str = "main") -> str:
         """Start conversation and return session ID."""
         # Create session ID
@@ -313,6 +347,7 @@ class ReadableMemoryManager:
                     cached_memory, fact
                 )
                 self.readable_cache[fact_hash] = updated_memory
+                self._save_cache()
                 return updated_memory
         return None
 
@@ -332,6 +367,7 @@ class ReadableMemoryManager:
 
         self.readable_cache[fact_hash] = readable_memory
         self.id_mapping[readable_memory.id] = fact_hash
+        self._save_cache()
 
         return readable_memory
 
@@ -346,9 +382,8 @@ class ReadableMemoryManager:
     ) -> List[Dict[str, Any]]:
         """Search memories with human-readable results."""
 
-        # Load all memories from core engine if cache is empty
-        if not self.readable_cache:
-            self._populate_cache_from_engine()
+        # Always refresh cache from core engine to get latest data
+        self._populate_cache_from_engine()
 
         results = []
 
@@ -381,17 +416,20 @@ class ReadableMemoryManager:
         """Populate cache with memories from core engine."""
         try:
             all_facts = self.core_engine.get_all_facts()
+            current_branch = self.core_engine.get_current_branch() or "main"
             for fact_hash, fact in all_facts:
                 if fact_hash not in self.readable_cache:
                     readable_memory = self.readability_engine.fact_to_readable_memory(fact)
-                    readable_memory.branch = self.core_engine.get_current_branch() or "main"
+                    readable_memory.branch = current_branch
                     self.readable_cache[fact_hash] = readable_memory
                     self.id_mapping[readable_memory.id] = fact_hash
+            self._save_cache()
         except Exception:
             pass  # Continue with empty cache
 
     def get_memory_by_id(self, memory_id: str) -> Optional[Dict[str, Any]]:
         """Get specific memory by its readable ID."""
+        self._populate_cache_from_engine()
         fact_hash = self.id_mapping.get(memory_id)
         if fact_hash and fact_hash in self.readable_cache:
             return self.readable_cache[fact_hash].to_display_dict()
@@ -399,6 +437,7 @@ class ReadableMemoryManager:
 
     def list_memories_by_category(self, session_id: str) -> Dict[str, List[Dict[str, Any]]]:
         """List memories organized by categories."""
+        self._populate_cache_from_engine()
         categorized: dict[str, list] = {}
 
         for memory in self.readable_cache.values():
@@ -415,6 +454,7 @@ class ReadableMemoryManager:
 
     def get_memory_timeline(self, session_id: str) -> List[Dict[str, Any]]:
         """Get chronological timeline of memories."""
+        self._populate_cache_from_engine()
         timeline = list(self.readable_cache.values())
         timeline.sort(key=lambda m: m.created_at)
 
@@ -422,6 +462,7 @@ class ReadableMemoryManager:
 
     def export_readable_memories(self, session_id: str, format: str = "json") -> str:
         """Export memories in human-readable format."""
+        self._populate_cache_from_engine()
         memories = [m.to_display_dict() for m in self.readable_cache.values()]
 
         if format == "json":

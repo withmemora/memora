@@ -2,12 +2,12 @@
 
 Provides REST API endpoints for:
 - Memory management (add, search, retrieve)
-- Branch operations (create, switch, list)
+- Branch operations (create, switch, list, delete)
 - Memory export and analytics
 - WebSocket support for real-time updates
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 import logging
@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
 from .readable_memory import ReadableMemoryManager
+from memora.core.engine import CoreEngine
 
 
 # Pydantic models for API requests/responses
@@ -40,7 +41,8 @@ class SearchRequest(BaseModel):
     category: Optional[str] = Field(None, description="Category to filter by")
     entity: Optional[str] = Field(None, description="Entity to filter by")
     confidence_min: Optional[float] = Field(0.0, description="Minimum confidence score")
-    limit: int = Field(20, description="Maximum results to return")
+    limit: int = Field(100, description="Maximum results to return")
+    branch: Optional[str] = Field(None, description="Branch to search in")
 
 
 class MemoryResponse(BaseModel):
@@ -61,13 +63,14 @@ class SessionResponse(BaseModel):
 
 
 class BranchRequest(BaseModel):
-    """Request to create or switch branches."""
+    """Request to create a branch."""
 
-    branch_name: str = Field(..., description="Name of the branch")
+    name: str = Field(..., description="Name of the branch")
 
 
 # Global state
 memory_manager: Optional[ReadableMemoryManager] = None
+core_engine: Optional[CoreEngine] = None
 active_sessions: Dict[str, str] = {}  # session_id -> current_branch
 websocket_connections: List[WebSocket] = []
 
@@ -75,16 +78,22 @@ websocket_connections: List[WebSocket] = []
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management."""
-    # Startup
-    global memory_manager
+    global memory_manager, core_engine
     memory_root = Path("./memora_data")
     memory_root.mkdir(exist_ok=True)
+
+    core_engine = CoreEngine()
+    try:
+        core_engine.open_store(memory_root)
+    except Exception:
+        core_engine.init_store(memory_root)
+        core_engine.open_store(memory_root)
+
     memory_manager = ReadableMemoryManager(memory_root)
 
     logging.info(f"Memora API server started with memory at {memory_root}")
     yield
 
-    # Shutdown
     logging.info("Memora API server shutting down")
 
 
@@ -99,7 +108,7 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -137,7 +146,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "memory_root": str(memory_manager.memory_root) if memory_manager else None,
         "active_sessions": len(active_sessions),
     }
@@ -184,6 +193,41 @@ async def end_session(session_id: str):
         raise HTTPException(status_code=404, detail="Session not found")
 
 
+# Stats endpoint
+
+
+@app.get("/stats")
+async def get_stats():
+    """Get memory statistics."""
+    if not core_engine:
+        raise HTTPException(status_code=500, detail="Core engine not initialized")
+
+    try:
+        stats = core_engine.get_store_stats()
+        branches = core_engine.list_branches()
+        current_branch = core_engine.get_current_branch() or "main"
+
+        commits = core_engine.get_log(limit=100)
+        last_commit_time = None
+        if commits:
+            last_commit_time = commits[0].committed_at.isoformat()
+
+        return {
+            "success": True,
+            "data": {
+                "total_memories": stats.get("fact_count", 0),
+                "total_commits": stats.get("commit_count", 0),
+                "total_branches": len(branches),
+                "current_branch": current_branch,
+                "open_conflicts": stats.get("open_conflict_count", 0),
+                "total_objects": stats.get("object_count", 0),
+                "last_commit": last_commit_time,
+            },
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+
 # Memory management endpoints
 
 
@@ -194,17 +238,14 @@ async def add_memory(request: AddMessageRequest):
         raise HTTPException(status_code=500, detail="Memory manager not initialized")
 
     try:
-        # Create session if needed
         session_id = memory_manager.start_conversation(request.branch or "main")
         if session_id not in active_sessions:
             active_sessions[session_id] = request.branch or "main"
 
-        # Add message to memory
         result = memory_manager.add_message(
             session_id=session_id, message=request.message, source=request.source
         )
 
-        # Notify WebSocket connections
         await notify_websocket_clients(
             {
                 "type": "memory_added",
@@ -231,7 +272,6 @@ async def search_memories(request: SearchRequest):
         raise HTTPException(status_code=500, detail="Memory manager not initialized")
 
     try:
-        # Use first available session or create one
         session_id = next(iter(active_sessions.keys()), None)
         if not session_id:
             session_id = memory_manager.start_conversation("main")
@@ -263,7 +303,6 @@ async def get_memory(memory_id: str):
         raise HTTPException(status_code=500, detail="Memory manager not initialized")
 
     try:
-        # Use first available session or create one
         session_id = next(iter(active_sessions.keys()), None)
         if not session_id:
             session_id = memory_manager.start_conversation("main")
@@ -287,7 +326,6 @@ async def list_categories():
         raise HTTPException(status_code=500, detail="Memory manager not initialized")
 
     try:
-        # Use first available session or create one
         session_id = next(iter(active_sessions.keys()), None)
         if not session_id:
             session_id = memory_manager.start_conversation("main")
@@ -307,7 +345,6 @@ async def get_memory_timeline():
         raise HTTPException(status_code=500, detail="Memory manager not initialized")
 
     try:
-        # Use first available session or create one
         session_id = next(iter(active_sessions.keys()), None)
         if not session_id:
             session_id = memory_manager.start_conversation("main")
@@ -341,7 +378,6 @@ async def export_memories(
         raise HTTPException(status_code=400, detail="Format must be 'json' or 'text'")
 
     try:
-        # Use provided session or first available
         if not session_id:
             session_id = next(iter(active_sessions.keys()), None)
         if not session_id:
@@ -370,18 +406,15 @@ async def export_memories(
 @app.post("/branches")
 async def create_branch(request: BranchRequest):
     """Create a new branch."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
+    if not core_engine:
+        raise HTTPException(status_code=500, detail="Core engine not initialized")
 
     try:
-        session_id = memory_manager.start_conversation(request.branch_name)
-        active_sessions[session_id] = request.branch_name
-
+        core_engine.create_branch(request.name)
         return {
             "success": True,
-            "branch": request.branch_name,
-            "session_id": session_id,
-            "message": f"Branch '{request.branch_name}' created",
+            "branch": request.name,
+            "message": f"Branch '{request.name}' created",
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create branch: {str(e)}")
@@ -390,11 +423,113 @@ async def create_branch(request: BranchRequest):
 @app.get("/branches")
 async def list_branches():
     """List all available branches."""
-    # For now, return branches from active sessions
-    # In a full implementation, this would query the underlying Git-style storage
-    branches = set(active_sessions.values())
+    if not core_engine:
+        raise HTTPException(status_code=500, detail="Core engine not initialized")
 
-    return {"success": True, "branches": list(branches), "count": len(branches)}
+    try:
+        branches = core_engine.list_branches()
+        current_branch = core_engine.get_current_branch() or "main"
+
+        branch_list = []
+        for name, commit_hash in branches:
+            branch_list.append(
+                {
+                    "name": name,
+                    "commit_hash": commit_hash,
+                    "is_current": name == current_branch,
+                }
+            )
+
+        if not branch_list:
+            branch_list = [{"name": "main", "commit_hash": None, "is_current": True}]
+
+        return {
+            "success": True,
+            "branches": branch_list,
+            "current_branch": current_branch,
+            "count": len(branch_list),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")
+
+
+@app.put("/branches/{branch_name}")
+async def switch_branch(branch_name: str):
+    """Switch to a branch."""
+    if not core_engine:
+        raise HTTPException(status_code=500, detail="Core engine not initialized")
+
+    try:
+        core_engine.switch_branch(branch_name)
+
+        for sid in active_sessions:
+            active_sessions[sid] = branch_name
+
+        if memory_manager:
+            memory_manager.sessions = {}
+
+        return {
+            "success": True,
+            "branch": branch_name,
+            "message": f"Switched to branch '{branch_name}'",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to switch branch: {str(e)}")
+
+
+@app.delete("/branches/{branch_name}")
+async def delete_branch(branch_name: str):
+    """Delete a branch."""
+    if branch_name == "main":
+        raise HTTPException(status_code=400, detail="Cannot delete main branch")
+
+    if not core_engine:
+        raise HTTPException(status_code=500, detail="Core engine not initialized")
+
+    try:
+        from memora.core.refs import get_branch
+
+        store_path = core_engine._store_path
+        if store_path:
+            get_branch(store_path, branch_name)
+            branch_file = store_path / "refs" / "heads" / branch_name
+            branch_file.unlink()
+
+        return {
+            "success": True,
+            "message": f"Branch '{branch_name}' deleted",
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete branch: {str(e)}")
+
+
+@app.get("/commits")
+async def get_commits(limit: int = Query(20, description="Number of commits to return")):
+    """Get commit history."""
+    if not core_engine:
+        raise HTTPException(status_code=500, detail="Core engine not initialized")
+
+    try:
+        commits = core_engine.get_log(limit=limit)
+        commit_list = []
+        for c in commits:
+            commit_list.append(
+                {
+                    "hash": c.root_tree_hash[:12] if c.root_tree_hash else "unknown",
+                    "author": c.author,
+                    "message": c.message,
+                    "committed_at": c.committed_at.isoformat(),
+                    "parent_hash": c.parent_hash[:12] if c.parent_hash else None,
+                }
+            )
+
+        return {
+            "success": True,
+            "commits": commit_list,
+            "count": len(commit_list),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get commits: {str(e)}")
 
 
 # WebSocket endpoint for real-time updates
@@ -408,14 +543,13 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         while True:
-            # Keep connection alive and wait for messages
-            await websocket.receive_text()  # Receive but don't store unused data
-            # Echo back for heartbeat
+            await websocket.receive_text()
             await websocket.send_json(
-                {"type": "heartbeat", "timestamp": datetime.utcnow().isoformat()}
+                {"type": "heartbeat", "timestamp": datetime.now(timezone.utc).isoformat()}
             )
     except WebSocketDisconnect:
-        websocket_connections.remove(websocket)
+        if websocket in websocket_connections:
+            websocket_connections.remove(websocket)
 
 
 async def notify_websocket_clients(message: dict):
@@ -430,7 +564,6 @@ async def notify_websocket_clients(message: dict):
         except Exception:
             disconnected.append(websocket)
 
-    # Remove disconnected clients
     for websocket in disconnected:
         if websocket in websocket_connections:
             websocket_connections.remove(websocket)
@@ -448,5 +581,3 @@ def start_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
 
 if __name__ == "__main__":
     start_server()
-
-# Complete FastAPI server implementation

@@ -23,9 +23,20 @@ def version():
 @app.command()
 def init(path: str = typer.Option("./memora_data", help="Path to initialize memory storage")):
     """Initialize a new Memora repository."""
+    from memora.core.engine import CoreEngine
+
     storage_path = Path(path)
     storage_path.mkdir(parents=True, exist_ok=True)
-    console.print(f"Memora repository initialized at: {storage_path}", style="green")
+
+    engine = CoreEngine()
+    try:
+        engine.init_store(storage_path)
+        console.print(f"Memora repository initialized at: {storage_path}", style="green")
+    except Exception as e:
+        if "already exists" in str(e):
+            console.print(f"Memora store already exists at: {storage_path}", style="yellow")
+        else:
+            console.print(f"Error: {e}", style="red")
 
 
 @app.command()
@@ -117,14 +128,23 @@ def ingest(
     """
     try:
         from memora.ai.file_processor import FileProcessor
-        from memora.interface.api import MemoraStore
+        from memora.core.engine import CoreEngine
     except ImportError as e:
         console.print(f" Error importing modules: {e}", style="red")
         return
 
-    # Initialize processor and store
+    # Initialize processor and core engine
     processor = FileProcessor()
-    memory_store = MemoraStore(memory_path)
+    engine = CoreEngine()
+
+    try:
+        engine.open_store(Path(memory_path))
+    except Exception:
+        try:
+            engine.init_store(Path(memory_path))
+        except Exception as e:
+            console.print(f" Error initializing store: {e}", style="red")
+            return
 
     path_obj = Path(path)
 
@@ -158,23 +178,11 @@ def ingest(
         try:
             facts = processor.process_file(str(file_path))
 
-            # Store each fact and commit
             for fact in facts:
-                memory_store.add(fact.content, source=fact.source)
+                engine.ingest_fact(fact)
 
-            # Commit after processing each file
             if facts:
-                try:
-                    from memora.interface.api import MemoraStore
-
-                    store = MemoraStore(memory_path)
-                    # Trigger a commit by adding a dummy message
-                    store.add(
-                        f"[File: {file_path.name}] - Extracted {len(facts)} facts",
-                        source=f"system:commit:{file_path.name}",
-                    )
-                except:
-                    pass
+                engine.commit(f"Ingested file: {file_path.name}", "user")
 
             total_facts += len(facts)
             successful += 1
@@ -211,31 +219,53 @@ def branch(
     """
     try:
         from memora.interface.api import MemoraStore
+        from memora.core.engine import CoreEngine
     except ImportError:
         console.print(" Error importing MemoraStore", style="red")
         return
 
-    memory_store = MemoraStore(memory_path)
+    engine = CoreEngine()
+    try:
+        engine.open_store(Path(memory_path))
+    except Exception:
+        try:
+            engine.init_store(Path(memory_path))
+        except Exception as e:
+            console.print(f" Error: {e}", style="red")
+            return
 
     if action == "list":
-        # List all branches
+        branches = engine.list_branches()
+        current = engine.get_current_branch()
+
+        if not branches:
+            console.print(" No branches found", style="yellow")
+            return
+
         console.print(" Available branches:", style="bold")
-        console.print("  • main (default)", style="green")
-        console.print("\nNote: Full branch management coming soon!", style="dim")
+        for branch_name, commit_hash in branches:
+            marker = " * " if branch_name == current else "   "
+            console.print(f"{marker}{branch_name} ({commit_hash[:8]}...)", style="green")
 
     elif action == "create":
         if not name:
             console.print(" Branch name required for create action", style="red")
             return
-        console.print(f" Created branch: {name}", style="green")
-        console.print("Note: Full branch management coming soon!", style="dim")
+        try:
+            engine.create_branch(name)
+            console.print(f" Created branch: {name}", style="green")
+        except Exception as e:
+            console.print(f" Error creating branch: {e}", style="red")
 
     elif action == "switch":
         if not name:
             console.print(" Branch name required for switch action", style="red")
             return
-        console.print(f" Switched to branch: {name}", style="green")
-        console.print("Note: Full branch management coming soon!", style="dim")
+        try:
+            engine.switch_branch(name)
+            console.print(f" Switched to branch: {name}", style="green")
+        except Exception as e:
+            console.print(f" Error switching branch: {e}", style="red")
 
     elif action == "delete":
         if not name:
@@ -244,8 +274,17 @@ def branch(
         if name == "main":
             console.print(" Cannot delete main branch", style="red")
             return
-        console.print(f" Deleted branch: {name}", style="green")
-        console.print("Note: Full branch management coming soon!", style="dim")
+        try:
+            from memora.core.refs import get_branch
+            from pathlib import Path as P
+
+            store_path = P(memory_path) / ".memora"
+            get_branch(store_path, name)
+            branch_file = store_path / "refs" / "heads" / name
+            branch_file.unlink()
+            console.print(f" Deleted branch: {name}", style="green")
+        except Exception as e:
+            console.print(f" Error deleting branch: {e}", style="red")
 
     else:
         console.print(f" Unknown action: {action}", style="red")

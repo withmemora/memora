@@ -226,7 +226,7 @@ class OllamaProxy:
                 user_facts = extract_facts(user_message, source=f"ollama:user:{session_id}")
 
                 if user_facts and self.verbose:
-                    logger.info(f"📝 Captured {len(user_facts)} memories from user")
+                    logger.info(f"Captured {len(user_facts)} memories from user")
 
                 for fact in user_facts:
                     self.memory_store.add(fact.content, source=fact.source)
@@ -235,7 +235,7 @@ class OllamaProxy:
                 ai_facts = extract_facts(ai_response, source=f"ollama:ai:{session_id}")
 
                 if ai_facts and self.verbose:
-                    logger.info(f"🤖 Captured {len(ai_facts)} memories from AI")
+                    logger.info(f"Captured {len(ai_facts)} memories from AI")
 
                 for fact in ai_facts:
                     self.memory_store.add(fact.content, source=fact.source)

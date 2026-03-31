@@ -333,28 +333,25 @@ class CoreEngine(CoreEngineInterface):
     # ==================== Index Queries (Simplified) ====================
 
     def _get_all_current_facts(self) -> list[tuple[str, Fact]]:
-        """Get all facts in current commit by scanning tree structure."""
-        current_commit = self.get_current_commit()
-        if not current_commit:
-            return []
+        """Get all facts by scanning the entire object store.
 
+        Since commits only store tree entries and branches may diverge,
+        we scan all fact objects in the store to ensure nothing is missed.
+        This is more reliable than walking commit trees alone.
+        """
         store_path, store = self._ensure_initialized()
 
-        try:
-            tree = store.read_tree(current_commit.root_tree_hash)
-            facts = []
+        all_hashes = store.list_all_hashes()
+        facts = []
 
-            for entry in tree.entries:
-                try:
-                    if entry.entry_type == "fact":
-                        fact = store.read_fact(entry.hash)
-                        facts.append((entry.hash, fact))
-                except Exception:
-                    continue
+        for obj_hash in all_hashes:
+            try:
+                fact = store.read_fact(obj_hash)
+                facts.append((obj_hash, fact))
+            except Exception:
+                continue
 
-            return facts
-        except Exception:
-            return []
+        return facts
 
     def get_facts_for_entity(self, name: str) -> list[tuple[str, Fact]]:
         """Query facts by entity name."""
