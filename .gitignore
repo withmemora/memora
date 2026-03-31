@@ -1,0 +1,77 @@
+# Memora directories
+.memora/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Linting/Type checking
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+dmypy.json
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Locks
+.write_lock
+
+# Temporary files
+*.tmp
+*.log
+
+# Project specific - .arc folder
+.arc/
+
+# Assets - specific files not to push
+assets/logo.png
+assets/logo-frame.png
+
+# Git automation scripts
+git_history.py
+
+# Documentation files to exclude (keep local for development)
+COMPLETION_ROADMAP.md
+PROJECT_STRUCTURE.md
+CLAUDE_COMPLETE_SPEC.md
+FOSS_HACK_IMPLEMENTATION_GUIDE.md
+WEBSITE_DOCS_LICENSING.md
+WEBSITE_DEMO_INTERACTIVE.md
+WEBSITE_DOCUMENTATION_COMPLETE.md
+WEBSITE_LANDING_PAGE.md
+WEBSITE_REPOSITORY_SETUP.md
+auto_commit.py
