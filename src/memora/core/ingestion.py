@@ -279,6 +279,30 @@ def _get_pattern_rules() -> list[dict]:
             "content_type": ContentType.TRIPLE,
             "confidence": 0.85,
         },
+        {
+            "pattern": r"\bdef\s+\w+\s*\(",
+            "extract_pattern": r"def\s+(\w+)\s*\([^)]*\).*",
+            "entity": "code",
+            "attribute": "function",
+            "content_type": ContentType.CODE_SNIPPET,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bclass\s+\w+",
+            "extract_pattern": r"class\s+(\w+).*",
+            "entity": "code",
+            "attribute": "class",
+            "content_type": ContentType.CODE_SNIPPET,
+            "confidence": 0.95,
+        },
+        {
+            "pattern": r"\bfunction\s+\w+\s*\(",
+            "extract_pattern": r"function\s+(\w+)\s*\([^)]*\)",
+            "entity": "code",
+            "attribute": "function",
+            "content_type": ContentType.CODE_SNIPPET,
+            "confidence": 0.95,
+        },
     ]
 
 
