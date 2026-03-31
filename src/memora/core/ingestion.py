@@ -216,6 +216,22 @@ def _get_pattern_rules() -> list[dict]:
             "confidence": 0.90,
         },
         {
+            "pattern": r"\bmy\s+favorite\s+",
+            "extract_pattern": r"\bmy\s+favorite\s+.+?\s+is\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "preference",
+            "content_type": ContentType.PREFERENCE,
+            "confidence": 0.90,
+        },
+        {
+            "pattern": r"\bfavorite\s+\w+\s+is\s+",
+            "extract_pattern": r"\bfavorite\s+\w+\s+is\s+(.+?)(?:[.!?]|$)",
+            "entity": "user",
+            "attribute": "preference",
+            "content_type": ContentType.PREFERENCE,
+            "confidence": 0.85,
+        },
+        {
             "pattern": r"\bmy\s+project\s+is\s+",
             "extract_pattern": r"\bmy\s+project\s+is\s+(.+?)(?:[.!?]|$)",
             "entity": "user",
