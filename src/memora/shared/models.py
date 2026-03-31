@@ -19,6 +19,8 @@ class ContentType(Enum):
     TRIPLE = "triple"
     DATE_VALUE = "date_value"
     PREFERENCE = "preference"
+    CODE_SNIPPET = "code_snippet"  # Code shared in conversations
+    FILE_CONTENT = "file_content"  # Content from ingested files
 
 
 class ConflictType(Enum):

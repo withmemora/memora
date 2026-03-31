@@ -8,6 +8,7 @@ This module implements a 5-stage pipeline:
   5. Deduplicate by hash
 """
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -65,6 +66,10 @@ def extract_facts(
     # Stage 6: Advanced extraction on full text
     advanced_facts = extract_advanced_facts(text, source, nlp_model)
     all_facts.extend(advanced_facts)
+
+    # Stage 6.5: Extract code snippets
+    code_facts = extract_code_facts(text, source)
+    all_facts.extend(code_facts)
 
     # Stage 7: Deduplicate by hash
     seen_hashes: set[str] = set()
@@ -425,6 +430,80 @@ def assign_confidence(extraction_type: str) -> float:
     }
 
     return confidence_map.get(extraction_type, 0.45)  # Default to ambiguous
+
+
+def extract_code_facts(text: str, source: str) -> list[Fact]:
+    """Extract code snippets from text (for conversations with AI).
+
+    Detects code blocks in various formats:
+    - Triple backtick code blocks (```language ... ```)
+    - Inline code (`code`)
+    - Common code patterns
+
+    Args:
+        text: Text potentially containing code snippets
+        source: Provenance string
+
+    Returns:
+        List of Fact objects representing code snippets
+    """
+    facts: list[Fact] = []
+    observed_at = datetime.now(timezone.utc)
+
+    # Extract code blocks with language specification
+    code_block_pattern = r"```(\w+)?\n(.*?)\n```"
+    code_blocks = re.findall(code_block_pattern, text, re.DOTALL)
+
+    for i, (language, code) in enumerate(code_blocks):
+        if code.strip():
+            lang = language.lower() if language else "unknown"
+            fact = Fact(
+                content=text,
+                content_type=ContentType.CODE_SNIPPET,
+                entity="user_code",
+                attribute=f"{lang}_code_block",
+                value=code.strip(),
+                source=source,
+                observed_at=observed_at,
+                confidence=0.90,
+            )
+            facts.append(fact)
+
+    # Extract function definitions (Python-specific as main focus)
+    python_func_pattern = r"def\s+(\w+)\s*\([^)]*\):"
+    python_funcs = re.findall(python_func_pattern, text)
+
+    for func_name in python_funcs:
+        fact = Fact(
+            content=text,
+            content_type=ContentType.CODE_SNIPPET,
+            entity="user_code",
+            attribute="python_function",
+            value=func_name,
+            source=source,
+            observed_at=observed_at,
+            confidence=0.85,
+        )
+        facts.append(fact)
+
+    # Extract class definitions (Python)
+    python_class_pattern = r"class\s+(\w+)"
+    python_classes = re.findall(python_class_pattern, text)
+
+    for class_name in python_classes:
+        fact = Fact(
+            content=text,
+            content_type=ContentType.CODE_SNIPPET,
+            entity="user_code",
+            attribute="python_class",
+            value=class_name,
+            source=source,
+            observed_at=observed_at,
+            confidence=0.85,
+        )
+        facts.append(fact)
+
+    return facts
 
 
 # Improved spaCy NLP processing
