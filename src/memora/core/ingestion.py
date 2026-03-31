@@ -247,6 +247,22 @@ def _get_pattern_rules() -> list[dict]:
             "content_type": ContentType.TRIPLE,
             "confidence": 0.88,
         },
+        {
+            "pattern": r"\bis\s+a\s+project\b",
+            "extract_pattern": r"^([A-Z][a-zA-Z]+)\s+is\s+a\s+project",
+            "entity": "user",
+            "attribute": "current_project",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.85,
+        },
+        {
+            "pattern": r"\bis\s+a\s+\w+\s+app\b",
+            "extract_pattern": r"^([A-Z][a-zA-Z]+)\s+is\s+a\s+[\w\s]+app",
+            "entity": "user",
+            "attribute": "current_project",
+            "content_type": ContentType.TRIPLE,
+            "confidence": 0.85,
+        },
     ]
 
 
