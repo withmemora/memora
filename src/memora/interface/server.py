@@ -1,9 +1,11 @@
-"""FastAPI server for Memora conversational memory system.
+"""FastAPI server for Memora v3.0.
 
 Provides REST API endpoints for:
-- Memory management (add, search, retrieve)
-- Branch operations (create, switch, list, delete)
-- Memory export and analytics
+- Memory management (paginated list, search, retrieve)
+- Session management (list, active, details)
+- Branch operations (create, switch, list, status)
+- Graph endpoints (nodes, edges, profile, query)
+- Timeline and export
 - WebSocket support for real-time updates
 """
 
@@ -19,93 +21,50 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 
-from .readable_memory import ReadableMemoryManager
 from memora.core.engine import CoreEngine
 
 
-# Pydantic models for API requests/responses
-
-
-class AddMessageRequest(BaseModel):
-    """Request to add a new message to memory."""
-
-    message: str = Field(..., description="The message to add to memory")
-    branch: Optional[str] = Field("main", description="Branch to add message to")
-    source: str = Field("api", description="Source of the message")
+class AddMemoryRequest(BaseModel):
+    content: str = Field(..., description="Human-readable memory content")
+    branch: Optional[str] = Field("main", description="Branch to add to")
+    source: str = Field("manual", description="Source of the memory")
 
 
 class SearchRequest(BaseModel):
-    """Request to search memories."""
-
     query: Optional[str] = Field(None, description="Text to search for")
-    category: Optional[str] = Field(None, description="Category to filter by")
-    entity: Optional[str] = Field(None, description="Entity to filter by")
-    confidence_min: Optional[float] = Field(0.0, description="Minimum confidence score")
-    limit: int = Field(100, description="Maximum results to return")
-    branch: Optional[str] = Field(None, description="Branch to search in")
+    memory_type: Optional[str] = Field(None, description="Filter by type")
+    limit: int = Field(100, description="Maximum results")
 
 
-class MemoryResponse(BaseModel):
-    """Response containing memory information."""
-
-    success: bool
-    data: Optional[Dict[str, Any]] = None
-    message: str = ""
-    count: int = 0
-
-
-class SessionResponse(BaseModel):
-    """Response for session operations."""
-
-    success: bool
-    session_id: str
-    message: str = ""
-
-
-class BranchRequest(BaseModel):
-    """Request to create a branch."""
-
-    name: str = Field(..., description="Name of the branch")
-
-
-# Global state
-memory_manager: Optional[ReadableMemoryManager] = None
-core_engine: Optional[CoreEngine] = None
-active_sessions: Dict[str, str] = {}  # session_id -> current_branch
+memory_engine: Optional[CoreEngine] = None
 websocket_connections: List[WebSocket] = []
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan management."""
-    global memory_manager, core_engine
+    global memory_engine
     memory_root = Path("./memora_data")
     memory_root.mkdir(exist_ok=True)
 
-    core_engine = CoreEngine()
+    memory_engine = CoreEngine()
     try:
-        core_engine.open_store(memory_root)
+        memory_engine.open_store(memory_root)
     except Exception:
-        core_engine.init_store(memory_root)
-        core_engine.open_store(memory_root)
-
-    memory_manager = ReadableMemoryManager(memory_root)
+        memory_engine.init_store(memory_root)
+        memory_engine.open_store(memory_root)
 
     logging.info(f"Memora API server started with memory at {memory_root}")
     yield
-
     logging.info("Memora API server shutting down")
 
 
-# Create FastAPI app
 app = FastAPI(
-    title="Memora API",
+    title="Memora API v3.0",
     description="Git-style versioned memory for LLMs with human-readable interface",
-    version="1.0.0",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -115,26 +74,19 @@ app.add_middleware(
 )
 
 
-# Health and info endpoints
-
-
 @app.get("/dashboard")
 async def dashboard():
-    """Serve the web dashboard."""
     dashboard_path = Path(__file__).parent.parent.parent.parent / "dashboard_local.html"
     if dashboard_path.exists():
         return FileResponse(dashboard_path)
-    else:
-        return JSONResponse({"error": "Dashboard not found"}, status_code=404)
+    return JSONResponse({"error": "Dashboard not found"}, status_code=404)
 
 
 @app.get("/")
 async def root():
-    """Root endpoint with API information."""
     return {
         "name": "Memora API",
-        "description": "Git-style versioned memory for LLMs",
-        "version": "1.0.0",
+        "version": "3.0.0",
         "docs": "/docs",
         "dashboard": "/dashboard",
         "status": "operational",
@@ -143,82 +95,28 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "memory_root": str(memory_manager.memory_root) if memory_manager else None,
-        "active_sessions": len(active_sessions),
     }
-
-
-# Session management endpoints
-
-
-@app.post("/sessions", response_model=SessionResponse)
-async def create_session(branch: str = "main"):
-    """Create a new memory session."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
-    try:
-        session_id = memory_manager.start_conversation(branch)
-        active_sessions[session_id] = branch
-
-        return SessionResponse(
-            success=True, session_id=session_id, message=f"Session created on branch '{branch}'"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
-
-
-@app.get("/sessions")
-async def list_sessions():
-    """List all active sessions."""
-    return {
-        "sessions": [
-            {"session_id": sid, "branch": branch} for sid, branch in active_sessions.items()
-        ],
-        "count": len(active_sessions),
-    }
-
-
-@app.delete("/sessions/{session_id}")
-async def end_session(session_id: str):
-    """End a session."""
-    if session_id in active_sessions:
-        del active_sessions[session_id]
-        return {"success": True, "message": "Session ended"}
-    else:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-
-# Stats endpoint
 
 
 @app.get("/stats")
 async def get_stats():
-    """Get memory statistics."""
-    if not core_engine:
-        raise HTTPException(status_code=500, detail="Core engine not initialized")
-
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        stats = core_engine.get_store_stats()
-        branches = core_engine.list_branches()
-        current_branch = core_engine.get_current_branch() or "main"
-
-        commits = core_engine.get_log(limit=100)
-        last_commit_time = None
-        if commits:
-            last_commit_time = commits[0].committed_at.isoformat()
-
+        stats = memory_engine.get_store_stats()
+        commits = memory_engine.get_log(limit=100)
+        last_commit_time = commits[0].committed_at if commits else None
         return {
             "success": True,
             "data": {
-                "total_memories": stats.get("fact_count", 0),
+                "total_memories": stats.get("memory_count", 0),
                 "total_commits": stats.get("commit_count", 0),
-                "total_branches": len(branches),
-                "current_branch": current_branch,
+                "total_branches": stats.get("branch_count", 0),
+                "total_sessions": stats.get("session_count", 0),
+                "current_branch": memory_engine.get_current_branch() or "main",
                 "open_conflicts": stats.get("open_conflict_count", 0),
                 "total_objects": stats.get("object_count", 0),
                 "last_commit": last_commit_time,
@@ -228,289 +126,245 @@ async def get_stats():
         raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
 
 
-# Memory management endpoints
-
-
-@app.post("/memory", response_model=MemoryResponse)
-async def add_memory(request: AddMessageRequest):
-    """Add a new message to memory."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
+@app.post("/memory")
+async def add_memory(request: AddMemoryRequest):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        session_id = memory_manager.start_conversation(request.branch or "main")
-        if session_id not in active_sessions:
-            active_sessions[session_id] = request.branch or "main"
-
-        result = memory_manager.add_message(
-            session_id=session_id, message=request.message, source=request.source
-        )
-
-        await notify_websocket_clients(
-            {
-                "type": "memory_added",
-                "session_id": session_id,
-                "branch": request.branch,
-                "result": result,
-            }
-        )
-
-        return MemoryResponse(
-            success=True,
-            data=result,
-            message="Memory added successfully",
-            count=result.get("memories_created", 0),
-        )
+        results = memory_engine.ingest_text(request.content, source=request.source)
+        await notify_websocket_clients({"type": "memory_added", "count": len(results)})
+        return {
+            "success": True,
+            "memories_created": len(results),
+            "memories": [{"id": m.id, "content": m.content} for _, m in results],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to add memory: {str(e)}")
 
 
-@app.post("/memory/search", response_model=MemoryResponse)
-async def search_memories(request: SearchRequest):
-    """Search memories with filters."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
+@app.get("/memories")
+async def list_memories(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    branch: Optional[str] = Query(None),
+    memory_type: Optional[str] = Query(None),
+):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        session_id = next(iter(active_sessions.keys()), None)
-        if not session_id:
-            session_id = memory_manager.start_conversation("main")
-            active_sessions[session_id] = "main"
-
-        results = memory_manager.search_memories(
-            session_id=session_id,
-            search_text=request.query,
-            category=request.category,
-            entity=request.entity,
-            confidence_min=request.confidence_min,
-            limit=request.limit,
+        memories = memory_engine.get_all_memories(
+            branch=branch, memory_type=memory_type, skip=skip, limit=limit
         )
-
-        return MemoryResponse(
-            success=True,
-            data={"memories": results},
-            message=f"Found {len(results)} memories",
-            count=len(results),
-        )
+        return {
+            "success": True,
+            "memories": [m.to_dict() for m in memories],
+            "count": len(memories),
+            "skip": skip,
+            "limit": limit,
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list memories: {str(e)}")
 
 
-@app.get("/memory/{memory_id}")
+@app.get("/memories/{memory_id}")
 async def get_memory(memory_id: str):
-    """Get a specific memory by ID."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        session_id = next(iter(active_sessions.keys()), None)
-        if not session_id:
-            session_id = memory_manager.start_conversation("main")
-            active_sessions[session_id] = "main"
-
-        memory = memory_manager.get_memory_by_id(memory_id)
+        memory = memory_engine.get_memory(memory_id)
         if not memory:
             raise HTTPException(status_code=404, detail="Memory not found")
-
-        return MemoryResponse(success=True, data=memory, message="Memory retrieved successfully")
+        return {"success": True, "memory": memory.to_dict()}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to retrieve memory: {str(e)}")
 
 
-@app.get("/memory/categories")
-async def list_categories():
-    """List all available memory categories."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
+@app.delete("/memories/{memory_id}")
+async def forget_memory(memory_id: str):
+    """Delete a memory by ID. Selective forgetting."""
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        session_id = next(iter(active_sessions.keys()), None)
-        if not session_id:
-            session_id = memory_manager.start_conversation("main")
-            active_sessions[session_id] = "main"
-
-        categories = memory_manager.list_memories_by_category(session_id)
-
-        return {"success": True, "categories": categories, "count": len(categories)}
+        deleted = memory_engine.forget_memory(memory_id)
+        if deleted:
+            return {"success": True, "message": f"Memory {memory_id} deleted"}
+        raise HTTPException(status_code=404, detail="Memory not found")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list categories: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete memory: {str(e)}")
 
 
-@app.get("/memory/timeline")
-async def get_memory_timeline():
-    """Get chronological memory timeline."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
+async def get_memory(memory_id: str):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        session_id = next(iter(active_sessions.keys()), None)
-        if not session_id:
-            session_id = memory_manager.start_conversation("main")
-            active_sessions[session_id] = "main"
-
-        timeline = memory_manager.get_memory_timeline(session_id)
-
-        return MemoryResponse(
-            success=True,
-            data={"timeline": timeline},
-            message=f"Timeline contains {len(timeline)} entries",
-            count=len(timeline),
-        )
+        memory = memory_engine.get_memory(memory_id)
+        if not memory:
+            raise HTTPException(status_code=404, detail="Memory not found")
+        return {"success": True, "memory": memory.to_dict()}
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get timeline: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve memory: {str(e)}")
 
 
-# Export endpoints
+@app.post("/memory/search")
+async def search_memories(request: SearchRequest):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        if request.query:
+            memories = memory_engine.search_memories(request.query)
+        else:
+            memories = memory_engine.get_all_memories(
+                memory_type=request.memory_type, skip=0, limit=request.limit
+            )
+        return {
+            "success": True,
+            "memories": [m.to_dict() for m in memories[: request.limit]],
+            "count": len(memories),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
 @app.get("/memory/export")
 async def export_memories(
-    format: str = Query("json", description="Export format: json or text"),
-    session_id: Optional[str] = Query(None, description="Session ID to export"),
+    format: str = Query("json", description="Export format: json, markdown, text"),
+    branch: Optional[str] = Query(None),
 ):
-    """Export memories in specified format."""
-    if not memory_manager:
-        raise HTTPException(status_code=500, detail="Memory manager not initialized")
-
-    if format not in ["json", "text"]:
-        raise HTTPException(status_code=400, detail="Format must be 'json' or 'text'")
-
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        if not session_id:
-            session_id = next(iter(active_sessions.keys()), None)
-        if not session_id:
-            session_id = memory_manager.start_conversation("main")
-            active_sessions[session_id] = "main"
-
-        export_data = memory_manager.export_readable_memories(session_id, format)
-
-        if format == "json":
-            return JSONResponse(
-                content={"success": True, "data": export_data},
-                headers={"Content-Type": "application/json"},
-            )
-        else:
-            return JSONResponse(
-                content={"success": True, "data": export_data},
-                headers={"Content-Type": "text/plain"},
-            )
+        exported = memory_engine.export_memories(format=format, branch=branch)
+        return {"success": True, "data": exported}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Export failed: {str(e)}")
 
 
-# Branch management endpoints
-
-
-@app.post("/branches")
-async def create_branch(request: BranchRequest):
-    """Create a new branch."""
-    if not core_engine:
-        raise HTTPException(status_code=500, detail="Core engine not initialized")
-
+@app.get("/memory/timeline")
+async def get_timeline(
+    start_date: Optional[str] = Query(None),
+    end_date: Optional[str] = Query(None),
+):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        core_engine.create_branch(request.name)
+        memories = memory_engine.get_timeline(start_date or "", end_date or "")
         return {
             "success": True,
-            "branch": request.name,
-            "message": f"Branch '{request.name}' created",
+            "timeline": [m.to_dict() for m in memories],
+            "count": len(memories),
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create branch: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get timeline: {str(e)}")
+
+
+@app.get("/sessions")
+async def list_sessions():
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        sessions = memory_engine.list_sessions()
+        return {
+            "success": True,
+            "sessions": [s.to_dict() for s in sessions],
+            "count": len(sessions),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list sessions: {str(e)}")
+
+
+@app.get("/sessions/active")
+async def get_active_session():
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        session = memory_engine.get_active_session()
+        if session:
+            return {"success": True, "session": session.to_dict()}
+        return {"success": True, "session": None, "message": "No active session"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get active session: {str(e)}")
+
+
+@app.get("/sessions/{session_id}")
+async def get_session(session_id: str):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        sessions = memory_engine.list_sessions()
+        for s in sessions:
+            if s.id == session_id:
+                return {"success": True, "session": s.to_dict()}
+        raise HTTPException(status_code=404, detail="Session not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get session: {str(e)}")
 
 
 @app.get("/branches")
 async def list_branches():
-    """List all available branches."""
-    if not core_engine:
-        raise HTTPException(status_code=500, detail="Core engine not initialized")
-
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        branches = core_engine.list_branches()
-        current_branch = core_engine.get_current_branch() or "main"
-
-        branch_list = []
-        for name, commit_hash in branches:
-            branch_list.append(
-                {
-                    "name": name,
-                    "commit_hash": commit_hash,
-                    "is_current": name == current_branch,
-                }
-            )
-
+        branches = memory_engine.list_branches()
+        current_branch = memory_engine.get_current_branch() or "main"
+        branch_list = [
+            {"name": name, "commit_hash": ch, "is_current": name == current_branch}
+            for name, ch in branches
+        ]
         if not branch_list:
             branch_list = [{"name": "main", "commit_hash": None, "is_current": True}]
-
-        return {
-            "success": True,
-            "branches": branch_list,
-            "current_branch": current_branch,
-            "count": len(branch_list),
-        }
+        return {"success": True, "branches": branch_list, "current_branch": current_branch}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list branches: {str(e)}")
 
 
+@app.get("/branches/status")
+async def get_branch_status():
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        all_status = memory_engine.get_all_branches_status()
+        current = memory_engine.get_current_branch() or "main"
+        return {"success": True, "current_branch": current, "branches": all_status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get branch status: {str(e)}")
+
+
+@app.post("/branches")
+async def create_branch(name: str = Query(..., description="Branch name")):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        memory_engine.create_branch(name)
+        return {"success": True, "branch": name, "message": f"Branch '{name}' created"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create branch: {str(e)}")
+
+
 @app.put("/branches/{branch_name}")
 async def switch_branch(branch_name: str):
-    """Switch to a branch."""
-    if not core_engine:
-        raise HTTPException(status_code=500, detail="Core engine not initialized")
-
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        core_engine.switch_branch(branch_name)
-
-        for sid in active_sessions:
-            active_sessions[sid] = branch_name
-
-        if memory_manager:
-            memory_manager.sessions = {}
-
-        return {
-            "success": True,
-            "branch": branch_name,
-            "message": f"Switched to branch '{branch_name}'",
-        }
+        memory_engine.switch_branch(branch_name)
+        return {"success": True, "branch": branch_name, "message": f"Switched to '{branch_name}'"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to switch branch: {str(e)}")
 
 
-@app.delete("/branches/{branch_name}")
-async def delete_branch(branch_name: str):
-    """Delete a branch."""
-    if branch_name == "main":
-        raise HTTPException(status_code=400, detail="Cannot delete main branch")
-
-    if not core_engine:
-        raise HTTPException(status_code=500, detail="Core engine not initialized")
-
-    try:
-        from memora.core.refs import get_branch
-
-        store_path = core_engine._store_path
-        if store_path:
-            get_branch(store_path, branch_name)
-            branch_file = store_path / "refs" / "heads" / branch_name
-            branch_file.unlink()
-
-        return {
-            "success": True,
-            "message": f"Branch '{branch_name}' deleted",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to delete branch: {str(e)}")
-
-
 @app.get("/commits")
-async def get_commits(limit: int = Query(20, description="Number of commits to return")):
-    """Get commit history."""
-    if not core_engine:
-        raise HTTPException(status_code=500, detail="Core engine not initialized")
-
+async def get_commits(limit: int = Query(20, description="Number of commits")):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
     try:
-        commits = core_engine.get_log(limit=limit)
+        commits = memory_engine.get_log(limit=limit)
         commit_list = []
         for c in commits:
             commit_list.append(
@@ -518,29 +372,74 @@ async def get_commits(limit: int = Query(20, description="Number of commits to r
                     "hash": c.root_tree_hash[:12] if c.root_tree_hash else "unknown",
                     "author": c.author,
                     "message": c.message,
-                    "committed_at": c.committed_at.isoformat(),
+                    "committed_at": c.committed_at,
                     "parent_hash": c.parent_hash[:12] if c.parent_hash else None,
                 }
             )
-
-        return {
-            "success": True,
-            "commits": commit_list,
-            "count": len(commit_list),
-        }
+        return {"success": True, "commits": commit_list, "count": len(commit_list)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get commits: {str(e)}")
 
 
-# WebSocket endpoint for real-time updates
+@app.get("/graph/nodes")
+async def get_graph_nodes(node_type: Optional[str] = Query(None)):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        nodes = memory_engine.get_graph_nodes(node_type)
+        return {"success": True, "nodes": nodes, "count": len(nodes)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get nodes: {str(e)}")
+
+
+@app.get("/graph/edges")
+async def get_graph_edges():
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        edges = memory_engine.get_graph_edges()
+        return {"success": True, "edges": edges, "count": len(edges)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get edges: {str(e)}")
+
+
+@app.get("/graph/profile")
+async def get_graph_profile():
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        profile = memory_engine.get_graph_profile()
+        return {"success": True, "profile": profile}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get profile: {str(e)}")
+
+
+@app.get("/graph/query")
+async def graph_query(entity: str = Query(..., description="Entity to query")):
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        edges = memory_engine.graph_query(entity)
+        return {"success": True, "entity": entity, "edges": edges, "count": len(edges)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query graph: {str(e)}")
+
+
+@app.get("/conflicts")
+async def get_conflicts():
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        conflicts = memory_engine.get_open_conflicts()
+        return {"success": True, "conflicts": [(cid, c.to_dict()) for cid, c in conflicts]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get conflicts: {str(e)}")
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time memory updates."""
     await websocket.accept()
     websocket_connections.append(websocket)
-
     try:
         while True:
             await websocket.receive_text()
@@ -553,27 +452,20 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 async def notify_websocket_clients(message: dict):
-    """Send message to all connected WebSocket clients."""
     if not websocket_connections:
         return
-
     disconnected = []
-    for websocket in websocket_connections:
+    for ws in websocket_connections:
         try:
-            await websocket.send_json(message)
+            await ws.send_json(message)
         except Exception:
-            disconnected.append(websocket)
-
-    for websocket in disconnected:
-        if websocket in websocket_connections:
-            websocket_connections.remove(websocket)
-
-
-# Development server function
+            disconnected.append(ws)
+    for ws in disconnected:
+        if ws in websocket_connections:
+            websocket_connections.remove(ws)
 
 
 def start_server(host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
-    """Start the Memora API server."""
     uvicorn.run(
         "memora.interface.server:app", host=host, port=port, reload=reload, log_level="info"
     )

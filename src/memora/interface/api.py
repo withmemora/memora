@@ -1,42 +1,38 @@
-"""Memora API module - Facade for the Memora memory system."""
+"""Memora API module - Facade for the Memora memory system v3.0."""
 
 from pathlib import Path
-from .server import app, start_server
-from .readable_memory import ReadableMemoryManager
+from memora.core.engine import CoreEngine
+from memora.shared.models import Memory
 
 
 class MemoraStore:
-    """Simple facade for the Memora memory system."""
+    """Simple facade for the Memora memory system v3.0."""
 
     def __init__(self, memory_root: str = "./memora_data"):
-        """Initialize Memora store."""
         self.memory_root = Path(memory_root)
-        self.memory_root.mkdir(exist_ok=True)
-        self.manager = ReadableMemoryManager(self.memory_root)
-        self._session_id = None
-
-    def _get_session(self) -> str:
-        """Get or create a persistent session."""
-        if self._session_id is None:
-            self._session_id = self.manager.start_conversation("main")
-        return self._session_id
+        self.memory_root.mkdir(parents=True, exist_ok=True)
+        self.engine = CoreEngine()
+        if (self.memory_root / ".memora").exists():
+            self.engine.open_store(self.memory_root)
+        else:
+            self.engine.init_store(self.memory_root)
 
     def add(self, text: str, source: str = "api") -> dict:
-        """Add text to memory and return results."""
-        session_id = self._get_session()
-        return self.manager.add_message(session_id, text, source)
+        results = self.engine.ingest_text(text, source=source)
+        return {
+            "memories_created": len(results),
+            "memories": [(m.id, m.content) for _, m in results],
+        }
 
     def search(self, query: str, limit: int = 20) -> list:
-        """Search memories."""
-        session_id = self._get_session()
-        return self.manager.search_memories(session_id=session_id, search_text=query, limit=limit)
+        memories = self.engine.search_memories(query)
+        return [
+            {"id": m.id, "content": m.content, "confidence": m.confidence} for m in memories[:limit]
+        ]
 
     def get_all(self) -> list:
-        """Get all memories."""
-        session_id = self._get_session()
-        return self.manager.search_memories(session_id=session_id, limit=1000)
+        memories = self.engine.get_all_memories(skip=0, limit=1000)
+        return [{"id": m.id, "content": m.content, "confidence": m.confidence} for m in memories]
 
 
-__all__ = ["app", "start_server", "MemoraStore"]
-
-# API facade for easy integration
+__all__ = ["MemoraStore"]

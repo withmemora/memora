@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "memora"
-version = "0.1.0"
+version = "3.0.0"
 description = "Git-style versioned memory for any LLM"
 authors = ["memora-ai"]
 license = "Apache-2.0"
@@ -48,11 +48,7 @@ omit = [
     "src/memora/shared/interfaces.py",
     "src/memora/interface/server.py",
     "src/memora/interface/cli.py",
-    "src/memora/interface/readable_memory.py",
     "src/memora/interface/integrations/*",
-    "src/memora/core/engine.py", 
-    "src/memora/core/gc.py",
-    "src/memora/core/index.py",
     "src/memora/core/storage_optimization.py",
 ]
 

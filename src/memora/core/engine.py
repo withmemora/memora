@@ -1,557 +1,653 @@
-"""Core engine implementation for Memora.
+"""Core engine for Memora v3.0.
 
-This is the main assembly point that combines all core modules into
-a unified CoreEngine that implements CoreEngineInterface.
-
-The CoreEngine provides the complete contract expected by the interface layer,
-orchestrating object storage, ingestion, conflicts, versioning, and retrieval.
+Orchestrates Memory objects, Session lifecycle, auto-commit, indices, graph, and branches.
 """
 
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime
 from pathlib import Path
 
+from memora.core.branch_manager import BranchManager
 from memora.core.conflicts import (
     detect_conflicts,
     store_conflict,
-    load_conflict,
     list_open_conflicts,
+    load_conflict,
     move_conflict_to_resolved,
 )
-from memora.core.ingestion import extract_facts, normalize_text
-from memora.core.refs import (
-    get_branch,
-    set_branch,
-    get_head,
-    set_head_to_branch,
-    list_branches,
-)
+from memora.core.graph import KnowledgeGraph
+from memora.core.index import IndexManager
+from memora.core.ingestion import extract_memories
+from memora.core.refs import get_branch, set_branch, get_head, set_head_to_branch, list_branches
+from memora.core.session import SessionManager
 from memora.core.store import ObjectStore
 from memora.shared.exceptions import (
     BranchNotFoundError,
-    ConflictExistsError,
     MemoraError,
     ObjectNotFoundError,
-    StagingEmptyError,
     StoreNotInitializedError,
 )
-from memora.shared.interfaces import CoreEngineInterface
-from memora.shared.models import Conflict, Fact, MemoryCommit, MemoryTree, MemoryTreeEntry
+from memora.shared.models import (
+    Conflict,
+    Memory,
+    MemoryCommit,
+    MemoryTree,
+    MemorySource,
+    MemoryType,
+    now_iso,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class CoreEngine(CoreEngineInterface):
-    """Unified core engine implementing the full CoreEngineInterface.
-
-    This engine coordinates all core modules:
-    - ObjectStore for content-addressable storage
-    - refs functions for branch and HEAD management
-    - conflicts functions for conflict detection and resolution
-    - Ingestion pipeline for fact extraction
-
-    Since Phase 3 (indexing) and Phase 4 (commit) modules are not available
-    in the public repository, this implementation provides simplified fallback
-    behavior that works with direct ObjectStore scanning.
-    """
+class CoreEngine:
+    """Unified core engine for Memora v3.0."""
 
     def __init__(self):
-        """Initialize the core engine.
-
-        Components are initialized when a store is opened.
-        """
         self._store_path: Path | None = None
         self._object_store: ObjectStore | None = None
+        self._session_manager: SessionManager | None = None
+        self._index_manager: IndexManager | None = None
+        self._graph: KnowledgeGraph | None = None
+        self._branch_manager: BranchManager | None = None
 
-        # Simple staging area (Phase 3 replacement)
-        self._staging: list[str] = []  # List of fact hashes
-
-    def _ensure_initialized(self) -> tuple[Path, ObjectStore]:
-        """Ensure store is initialized and return components.
-
-        Returns:
-            Tuple of (store_path, object_store)
-
-        Raises:
-            StoreNotInitializedError: If no store is open
-        """
+    def _ensure(self) -> tuple[Path, ObjectStore]:
         if self._object_store is None or self._store_path is None:
             raise StoreNotInitializedError(
                 "No store is open. Call init_store() or open_store() first."
             )
-
         return self._store_path, self._object_store
 
     # ==================== Store Lifecycle ====================
 
     def init_store(self, path: Path) -> None:
-        """Initialize a new Memora store at the given path."""
         store_path = path / ".memora"
-
         if store_path.exists():
             raise MemoraError(f"Memora store already exists at {store_path}")
-
-        # Initialize directory structure
         ObjectStore.initialize_directories(store_path)
-
-        # Initialize components
         self._store_path = store_path
         self._object_store = ObjectStore(store_path)
-
-        # Initialize staging
-        self._staging = []
-
+        self._session_manager = SessionManager(store_path)
+        self._index_manager = IndexManager(store_path)
+        self._graph = KnowledgeGraph(store_path)
+        self._branch_manager = BranchManager(store_path)
         logger.info(f"Initialized new Memora store at {store_path}")
 
     def open_store(self, path: Path) -> None:
-        """Open an existing Memora store at the given path."""
         store_path = path / ".memora"
-
         if not store_path.exists():
             raise StoreNotInitializedError(f"No Memora store found at {store_path}")
-
-        # Validate basic structure
-        required_dirs = ["objects", "refs", "conflicts"]
-        for dir_name in required_dirs:
-            if not (store_path / dir_name).exists():
-                raise StoreNotInitializedError(f"Invalid store structure: missing {dir_name}/")
-
-        # Initialize components
         self._store_path = store_path
         self._object_store = ObjectStore(store_path)
-
-        # Initialize staging (simplified - no persistent staging)
-        self._staging = []
-
+        self._session_manager = SessionManager(store_path)
+        self._index_manager = IndexManager(store_path)
+        self._graph = KnowledgeGraph(store_path)
+        self._branch_manager = BranchManager(store_path)
         logger.info(f"Opened Memora store at {store_path}")
 
     # ==================== Ingestion ====================
 
-    def ingest_text(self, text: str, source: str, author: str) -> list[tuple[str, Fact]]:
-        """Extract facts from text and stage them."""
-        store_path, store = self._ensure_initialized()
+    def ingest_text(
+        self, text: str, source: str = "ollama_chat", author: str = "user"
+    ) -> list[tuple[str, Memory]]:
+        """Extract memories from text and store them."""
+        store_path, store = self._ensure()
+        branch = self.get_current_branch() or "main"
 
-        # Run NLP pipeline
-        normalized = normalize_text(text)
-        if not normalized:
-            return []
+        session_mgr = self._session_manager
+        session = session_mgr.get_active_session() if session_mgr else None
+        session_id = session.id if session else ""
 
-        # Extract facts from each normalized sentence
-        all_facts = []
-        for sentence in normalized:
-            facts = extract_facts(sentence, source)
-            all_facts.extend(facts)
+        if not session_id and session_mgr:
+            session = session_mgr.open_session(branch)
+            session_id = session.id
 
-        # Stage extracted facts
-        staged_facts = []
-        for fact in all_facts:
-            fact_hash = self.ingest_fact(fact)
-            staged_facts.append((fact_hash, fact))
+        memories, ner_entities = extract_memories(
+            text,
+            source=source,
+            session_id=session_id,
+            branch=branch,
+        )
 
-        logger.info(f"Ingested {len(staged_facts)} facts from text")
-        return staged_facts
+        result = []
+        for memory in memories:
+            mem_hash = store.write(memory)
+            result.append((mem_hash, memory))
 
-    def ingest_fact(self, fact: Fact) -> str:
-        """Add a single fact to staging area."""
-        store_path, store = self._ensure_initialized()
+            if session_mgr and session_id:
+                session_mgr.add_memory_to_session(session_id, memory.id)
 
-        # Write fact to object store
-        fact_hash = store.write(fact)
+            if self._index_manager:
+                self._index_manager.add_memory(
+                    memory.id,
+                    memory.content,
+                    memory.memory_type.value,
+                    memory.session_id,
+                    memory.created_at,
+                )
 
-        # Add to staging
-        if fact_hash not in self._staging:
-            self._staging.append(fact_hash)
+            if self._graph and ner_entities:
+                self._graph.update_from_ner(ner_entities)
 
-        # Check for conflicts (immediate detection)
+        logger.info(f"Ingested {len(result)} memories from text")
+        return result
+
+    def ingest_file(
+        self, file_path: str, source: str = "file_ingestion"
+    ) -> list[tuple[str, Memory]]:
+        """Ingest a file and extract memories."""
+        from memora.ai.file_processor import FileProcessor
+
+        store_path, store = self._ensure()
+        branch = self.get_current_branch() or "main"
+
+        session_mgr = self._session_manager
+        session = session_mgr.get_active_session() if session_mgr else None
+        session_id = session.id if session else ""
+
+        fp = FileProcessor()
+        facts = fp.process_file(file_path, source_prefix=source)
+
+        path = Path(file_path)
+        file_type = path.suffix.lower().lstrip(".")
+
+        full_text = ""
         try:
-            # Get all existing facts to check conflicts
-            all_hashes = store.list_all_hashes()
-            existing_facts = []
+            full_text = path.read_text(encoding="utf-8")
+        except Exception:
+            full_text = " ".join([f.content for f in facts])
 
-            for existing_hash in all_hashes:
-                if existing_hash == fact_hash:
-                    continue
-                try:
-                    existing_fact = store.read_fact(existing_hash)
-                    existing_facts.append(existing_fact)
-                except Exception:
-                    # Skip if can't read as fact (might be tree/commit)
-                    continue
+        memories, ner_entities = extract_memories(
+            full_text,
+            source=source,
+            session_id=session_id,
+            branch=branch,
+            filename=path.name,
+            file_type=file_type,
+        )
 
-            # Detect conflicts
-            conflicts = detect_conflicts(fact, existing_facts)
-            for conflict in conflicts:
-                store_conflict(conflict, store_path)
+        result = []
+        for memory in memories:
+            mem_hash = store.write(memory)
+            result.append((mem_hash, memory))
 
-        except Exception as e:
-            logger.warning(f"Error during conflict detection: {e}")
+            if session_mgr and session_id:
+                session_mgr.add_memory_to_session(session_id, memory.id)
+                session_mgr.add_file_to_session(session_id, path.name)
 
-        return fact_hash
+            if self._index_manager:
+                self._index_manager.add_memory(
+                    memory.id,
+                    memory.content,
+                    memory.memory_type.value,
+                    memory.session_id,
+                    memory.created_at,
+                )
 
-    def get_staging_status(self) -> list[tuple[str, Fact]]:
-        """Get all facts currently in the staging area."""
-        store_path, store = self._ensure_initialized()
+        logger.info(f"Ingested {len(result)} memories from file {file_path}")
+        return result
 
-        staged_facts = []
-        for fact_hash in self._staging:
+    # ==================== Session & Auto-Commit ====================
+
+    def auto_commit_session(self, session_id: str, author: str = "system") -> str | None:
+        """Auto-commit when a session closes."""
+        store_path, store = self._ensure()
+        session_mgr = self._session_manager
+        if not session_mgr:
+            return None
+
+        session = session_mgr.close_session(session_id)
+        if not session or not session.memory_ids:
+            return None
+
+        # Fetch actual memories for a descriptive commit message
+        memories = []
+        all_hashes = store.list_all_hashes()
+        for obj_hash in all_hashes:
             try:
-                fact = store.read_fact(fact_hash)
-                staged_facts.append((fact_hash, fact))
+                memory = store.read_memory(obj_hash)
+                if memory.id in session.memory_ids:
+                    memories.append(memory)
             except Exception:
-                # Remove invalid hash from staging
-                self._staging.remove(fact_hash)
+                continue
 
-        return staged_facts
+        commit_message = session_mgr.generate_commit_message(session, memories)
 
-    # ==================== Commits ====================
-
-    def commit(self, message: str, author: str, mode: str = "lenient") -> str:
-        """Create a commit from staged facts."""
-        store_path, store = self._ensure_initialized()
-
-        if not self._staging:
-            raise StagingEmptyError("Nothing to commit - staging area is empty")
-
-        # Check for unresolved conflicts if strict mode
-        if mode == "strict":
-            open_conflicts = list_open_conflicts(store_path)
-            if open_conflicts:
-                raise ConflictExistsError(
-                    f"Unresolved conflicts exist: {len(open_conflicts)} conflicts"
-                )
-
-        # Build memory tree from staged facts
-        entries = []
-        for fact_hash in self._staging:
-            try:
-                fact = store.read_fact(fact_hash)
-                # Create tree entry for each fact
-                entry = MemoryTreeEntry(
-                    name=f"{fact.entity}_{fact.attribute}", entry_type="fact", hash=fact_hash
-                )
-                entries.append(entry)
-            except Exception as e:
-                logger.warning(f"Skipping invalid staged fact {fact_hash}: {e}")
-
-        # Create memory tree
-        tree = MemoryTree(entries=entries)
+        tree = MemoryTree(memory_ids=session.memory_ids)
         tree_hash = store.write(tree)
 
-        # Get parent commit
         try:
-            parent_commit = self.get_current_commit()
-            parent_hash = parent_commit.root_tree_hash if parent_commit else None
+            branch_name, current_commit_hash = get_head(store_path)
+            parent_hash = current_commit_hash if current_commit_hash else None
         except Exception:
             parent_hash = None
 
-        # Create commit
         commit = MemoryCommit(
             root_tree_hash=tree_hash,
             parent_hash=parent_hash,
             author=author,
-            message=message,
-            committed_at=datetime.utcnow(),
+            message=commit_message,
+            committed_at=now_iso(),
         )
         commit_hash = store.write(commit)
 
-        # Update current branch to point to new commit
-        try:
-            branch_name, current_commit_hash = get_head(store_path)
-            if branch_name:
-                set_branch(store_path, branch_name, commit_hash)
-            else:
-                # Create main branch if no branches exist
-                set_branch(store_path, "main", commit_hash)
-                set_head_to_branch(store_path, "main")
-        except Exception:
-            # Create main branch if no branches exist
+        branch_name = session.branch
+        if branch_name:
+            set_branch(store_path, branch_name, commit_hash)
+        else:
             set_branch(store_path, "main", commit_hash)
             set_head_to_branch(store_path, "main")
 
-        # Clear staging
-        self._staging.clear()
+        session.commit_hash = commit_hash
+        session.auto_commit_message = commit_message
+        session_mgr._write_session(session, session_mgr.closed_path / f"{session_id}.json")
 
-        logger.info(f"Created commit {commit_hash[:8]} with {len(entries)} facts")
+        if self._branch_manager:
+            session_count = len(session_mgr.list_sessions(include_closed=True))
+            memory_count = len(session.memory_ids)
+            self._branch_manager.update_branch_counts(
+                session.branch or "main", session_count, memory_count
+            )
+            self._branch_manager.check_and_auto_create(session.branch or "main")
+
+        logger.info(f"Auto-committed session {session_id}: {commit_hash[:8]}")
         return commit_hash
 
-    def reset_staging(self) -> None:
-        """Clear the staging area without committing."""
-        self._staging.clear()
-        logger.info("Cleared staging area")
+    def forget_memory(self, memory_id: str) -> bool:
+        """Remove a memory by ID. Selective forgetting.
 
-    # ==================== Reading Objects ====================
+        This:
+        1. Deletes the memory object from the store
+        2. Removes it from the session index
+        3. Removes it from the word/temporal/type indices
+        4. Removes it from any active session's memory_ids
+        5. Supersedes any graph edges referencing it
 
-    def get_fact(self, hash: str) -> Fact:
-        """Retrieve a fact by its hash."""
-        store_path, store = self._ensure_initialized()
-        return store.read_fact(hash)
+        Returns True if found and deleted, False if not found.
+        """
+        store_path, store = self._ensure()
+
+        # Find the memory object
+        target_hash = None
+        all_hashes = store.list_all_hashes()
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                if memory.id == memory_id:
+                    target_hash = obj_hash
+                    break
+            except Exception:
+                continue
+
+        if not target_hash:
+            return False
+
+        # Delete the object file
+        obj_path = store._object_path_from_hash(target_hash)
+        if obj_path.exists():
+            obj_path.unlink()
+
+        # Remove from active session if present
+        session_mgr = self._session_manager
+        if session_mgr:
+            session = session_mgr.get_active_session()
+            if session and memory_id in session.memory_ids:
+                session.memory_ids.remove(memory_id)
+                session_mgr._write_session(session, session_mgr.active_path / f"{session.id}.json")
+
+        # Remove from indices
+        if self._index_manager:
+            idx = self._index_manager
+            # Remove from word index
+            words = idx._read_index("words")
+            for token, mem_ids in words.items():
+                if memory_id in mem_ids:
+                    mem_ids.remove(memory_id)
+            idx._write_index("words", words)
+            # Remove from temporal index
+            temporal = idx._read_index("temporal")
+            for date_key, mem_ids in temporal.items():
+                if memory_id in mem_ids:
+                    mem_ids.remove(memory_id)
+            idx._write_index("temporal", temporal)
+            # Remove from session index
+            sessions = idx._read_index("sessions")
+            for sess_id, mem_ids in sessions.items():
+                if memory_id in mem_ids:
+                    mem_ids.remove(memory_id)
+            idx._write_index("sessions", sessions)
+            # Remove from type index
+            types = idx._read_index("types")
+            for mem_type, mem_ids in types.items():
+                if memory_id in mem_ids:
+                    mem_ids.remove(memory_id)
+            idx._write_index("types", types)
+
+        # Supersede graph edges
+        if self._graph:
+            edges = self._graph._load_edges()
+            changed = False
+            for edge in edges:
+                if edge.get("memory_id") == memory_id:
+                    edge["superseded_at"] = now_iso()
+                    changed = True
+            if changed:
+                self._graph._save_edges(edges)
+
+        # Clear LRU cache for this hash
+        store.read_memory.cache_clear()
+
+        logger.info(f"Forgot memory {memory_id}")
+        return True
+
+    def get_active_session(self):
+        if self._session_manager:
+            return self._session_manager.get_active_session()
+        return None
+
+    def list_sessions(self):
+        if self._session_manager:
+            return self._session_manager.list_sessions()
+        return []
+
+    # ==================== Reading ====================
+
+    def get_memory(self, memory_id: str) -> Memory | None:
+        store_path, store = self._ensure()
+        all_hashes = store.list_all_hashes()
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                if memory.id == memory_id:
+                    return memory
+            except Exception:
+                continue
+        return None
 
     def get_commit(self, hash: str) -> MemoryCommit:
-        """Retrieve a commit by its hash."""
-        store_path, store = self._ensure_initialized()
+        store_path, store = self._ensure()
         return store.read_commit(hash)
 
     def get_current_commit(self) -> MemoryCommit | None:
-        """Get the commit pointed to by current branch HEAD."""
-        store_path, store = self._ensure_initialized()
-
+        store_path, store = self._ensure()
         try:
             branch_name, commit_hash = get_head(store_path)
             if commit_hash:
                 return store.read_commit(commit_hash)
         except Exception:
             pass
-
         return None
 
     def get_log(self, limit: int = 20) -> list[MemoryCommit]:
-        """Get commit history starting from current HEAD."""
-        store_path, store = self._ensure_initialized()
-
+        store_path, store = self._ensure()
         current_commit = self.get_current_commit()
         if not current_commit:
             return []
-
         commits = []
         commit = current_commit
-
         for _ in range(limit):
             commits.append(commit)
-
             if not commit.parent_hash:
                 break
-
             try:
                 commit = store.read_commit(commit.parent_hash)
             except Exception:
                 break
-
         return commits
 
-    # ==================== Index Queries (Simplified) ====================
+    def get_all_memories(
+        self,
+        branch: str | None = None,
+        memory_type: str | None = None,
+        skip: int = 0,
+        limit: int = 50,
+    ) -> list[Memory]:
+        """Get all memories with optional filters and pagination."""
+        store_path, store = self._ensure()
 
-    def _get_all_current_facts(self) -> list[tuple[str, Fact]]:
-        """Get all facts by scanning the entire object store.
-
-        Since commits only store tree entries and branches may diverge,
-        we scan all fact objects in the store to ensure nothing is missed.
-        This is more reliable than walking commit trees alone.
-        """
-        store_path, store = self._ensure_initialized()
+        if self._index_manager and memory_type:
+            mem_ids = self._index_manager.get_type_memories(memory_type)
+            return self._fetch_memories_by_ids(store, mem_ids, skip, limit)
 
         all_hashes = store.list_all_hashes()
-        facts = []
-
+        memories = []
         for obj_hash in all_hashes:
             try:
-                fact = store.read_fact(obj_hash)
-                facts.append((obj_hash, fact))
+                memory = store.read_memory(obj_hash)
+                if branch and memory.branch != branch:
+                    continue
+                if memory_type and memory.memory_type.value != memory_type:
+                    continue
+                memories.append(memory)
             except Exception:
                 continue
 
-        return facts
+        memories.sort(key=lambda m: m.created_at, reverse=True)
+        return memories[skip : skip + limit]
 
-    def get_facts_for_entity(self, name: str) -> list[tuple[str, Fact]]:
-        """Query facts by entity name."""
-        all_facts = self._get_all_current_facts()
-        return [(h, f) for h, f in all_facts if f.entity.lower() == name.lower()]
+    def _fetch_memories_by_ids(
+        self, store, mem_ids: list[str], skip: int, limit: int
+    ) -> list[Memory]:
+        memories = []
+        for mem_id in mem_ids:
+            all_hashes = store.list_all_hashes()
+            for obj_hash in all_hashes:
+                try:
+                    memory = store.read_memory(obj_hash)
+                    if memory.id == mem_id:
+                        memories.append(memory)
+                        break
+                except Exception:
+                    continue
+        return memories[skip : skip + limit]
 
-    def get_facts_for_topic(self, path: str) -> list[tuple[str, Fact]]:
-        """Query facts by topic path."""
-        # Simple attribute matching (topic path extraction would be more complex)
-        if "/" in path:
-            _, attribute = path.split("/", 1)
-        else:
-            attribute = path
+    # ==================== Search ====================
 
-        all_facts = self._get_all_current_facts()
-        return [(h, f) for h, f in all_facts if f.attribute.lower() == attribute.lower()]
+    def search_memories(self, query: str) -> list[Memory]:
+        """Search memories using word index."""
+        store_path, store = self._ensure()
 
-    def get_facts_as_of(self, timestamp: str) -> list[tuple[str, Fact]]:
-        """Query facts observed up to a given timestamp."""
-        try:
-            cutoff = datetime.fromisoformat(timestamp)
-        except ValueError:
-            return []
+        if self._index_manager:
+            mem_ids = self._index_manager.search_words(query)
+            if mem_ids:
+                results = []
+                all_hashes = store.list_all_hashes()
+                for obj_hash in all_hashes:
+                    try:
+                        memory = store.read_memory(obj_hash)
+                        if memory.id in mem_ids:
+                            results.append(memory)
+                    except Exception:
+                        continue
+                return results
 
-        all_facts = self._get_all_current_facts()
-        return [(h, f) for h, f in all_facts if f.observed_at <= cutoff]
+        query_lower = query.lower()
+        all_hashes = store.list_all_hashes()
+        results = []
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                if query_lower in memory.content.lower():
+                    results.append(memory)
+            except Exception:
+                continue
+        return results
 
-    def get_all_facts(self) -> list[tuple[str, Fact]]:
-        """Get all facts in the current commit."""
-        return self._get_all_current_facts()
+    def get_timeline(self, start_date: str = "", end_date: str = "") -> list[Memory]:
+        """Get memories in chronological order."""
+        store_path, store = self._ensure()
 
-    def search_facts_by_keyword(self, keyword: str) -> list[tuple[str, Fact]]:
-        """Search fact values by keyword."""
-        keyword_lower = keyword.lower()
-        all_facts = self._get_all_current_facts()
+        if self._index_manager and (start_date or end_date):
+            s = start_date or "2000-01-01"
+            e = end_date or "2099-12-31"
+            mem_ids = self._index_manager.get_temporal_range(s, e)
+            if mem_ids:
+                return self._fetch_memories_by_ids(store, mem_ids, 0, 1000)
 
-        matching = []
-        for hash, fact in all_facts:
-            if (
-                keyword_lower in fact.value.lower()
-                or keyword_lower in fact.content.lower()
-                or keyword_lower in fact.attribute.lower()
-                or keyword_lower in fact.entity.lower()
-            ):
-                matching.append((hash, fact))
-
-        return matching
+        all_hashes = store.list_all_hashes()
+        memories = []
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                memories.append(memory)
+            except Exception:
+                continue
+        memories.sort(key=lambda m: m.created_at)
+        return memories
 
     # ==================== Conflicts ====================
 
     def get_open_conflicts(self) -> list[tuple[str, Conflict]]:
-        """Get all unresolved conflicts."""
-        store_path, store = self._ensure_initialized()
-
+        store_path, store = self._ensure()
         conflict_ids = list_open_conflicts(store_path)
         conflicts = []
-
-        for conflict_id in conflict_ids:
-            try:
-                conflict = load_conflict(conflict_id, store_path)
-                if conflict:
-                    conflicts.append((conflict_id, conflict))
-            except Exception:
-                continue
-
+        for cid in conflict_ids:
+            conflict = load_conflict(cid, store_path)
+            if conflict:
+                conflicts.append((cid, conflict))
         return conflicts
 
-    def get_resolved_conflicts(self) -> list[tuple[str, Conflict]]:
-        """Get all resolved conflicts."""
-        store_path, store = self._ensure_initialized()
-
-        # Scan resolved directory
-        try:
-            resolved_dir = store_path / "conflicts" / "resolved"
-            conflicts = []
-
-            if resolved_dir.exists():
-                for file in resolved_dir.glob("*.json"):
-                    try:
-                        conflict = load_conflict(file.stem, store_path)
-                        if conflict:
-                            conflicts.append((file.stem, conflict))
-                    except Exception:
-                        continue
-
-            return conflicts
-        except Exception:
-            return []
-
-    def resolve_conflict(self, conflict_id: str, winning_hash: str, reason: str) -> Conflict:
-        """Manually resolve a conflict by choosing a winning fact."""
-        store_path, store = self._ensure_initialized()
-
+    def resolve_conflict(
+        self, conflict_id: str, winning_memory_id: str, reason: str
+    ) -> Conflict | None:
+        store_path, store = self._ensure()
         conflict = load_conflict(conflict_id, store_path)
         if not conflict:
-            raise ObjectNotFoundError(f"Conflict {conflict_id} not found")
-
-        # Update conflict with resolution
-        from memora.shared.models import ConflictStatus
-
+            return None
         conflict.conflict_status = ConflictStatus.USER_RESOLVED
-        conflict.resolution_fact_hash = winning_hash
+        conflict.resolution_memory_id = winning_memory_id
         conflict.resolution_reason = reason
-        conflict.resolved_at = datetime.utcnow()
-
-        # Move to resolved directory
+        conflict.resolved_at = now_iso()
         move_conflict_to_resolved(conflict, store_path)
-
         return conflict
 
     # ==================== Branches ====================
 
     def create_branch(self, name: str) -> None:
-        """Create a new branch pointing to current HEAD."""
-        store_path, store = self._ensure_initialized()
-
-        # Check if branch already exists
+        store_path, store = self._ensure()
         try:
             get_branch(store_path, name)
             raise MemoraError(f"Branch '{name}' already exists")
         except BranchNotFoundError:
-            pass  # Branch doesn't exist, good
-
-        # Get current HEAD
+            pass
         branch_name, current_commit_hash = get_head(store_path)
         if not current_commit_hash:
             raise MemoraError("No commits exist yet - cannot create branch")
-
-        # Create branch
         set_branch(store_path, name, current_commit_hash)
-        logger.info(f"Created branch '{name}' pointing to {current_commit_hash[:8]}")
+        logger.info(f"Created branch '{name}'")
 
     def switch_branch(self, name: str) -> None:
-        """Switch to an existing branch."""
-        store_path, store = self._ensure_initialized()
-
+        store_path, store = self._ensure()
         try:
             get_branch(store_path, name)
         except BranchNotFoundError:
             raise BranchNotFoundError(f"Branch '{name}' not found")
-
         set_head_to_branch(store_path, name)
         logger.info(f"Switched to branch '{name}'")
 
     def list_branches(self) -> list[tuple[str, str]]:
-        """List all branches and their commit hashes."""
-        store_path, store = self._ensure_initialized()
+        store_path, store = self._ensure()
         return list_branches(store_path)
 
     def get_current_branch(self) -> str | None:
-        """Get the name of the current branch."""
-        store_path, store = self._ensure_initialized()
+        store_path, store = self._ensure()
         try:
-            branch_name, commit_hash = get_head(store_path)
+            branch_name, _ = get_head(store_path)
             return branch_name
         except Exception:
             return None
 
-    # ==================== Info ====================
+    def get_branch_status(self) -> dict:
+        """Get current branch size info."""
+        store_path, store = self._ensure()
+        branch = self.get_current_branch() or "main"
+        if self._branch_manager:
+            info = self._branch_manager.get_branch_info(branch)
+            if info:
+                return info
+        return {"name": branch, "status": "active"}
+
+    def get_all_branches_status(self) -> list[dict]:
+        if self._branch_manager:
+            return self._branch_manager.get_all_branches_status()
+        return []
+
+    # ==================== Graph ====================
+
+    def get_graph_nodes(self, node_type: str | None = None) -> list[dict]:
+        if self._graph:
+            return self._graph.get_nodes(node_type)
+        return []
+
+    def get_graph_edges(self) -> list[dict]:
+        if self._graph:
+            return self._graph._load_edges()
+        return []
+
+    def get_graph_profile(self) -> dict:
+        if self._graph:
+            return self._graph.build_profile()
+        return {}
+
+    def graph_query(self, entity: str) -> list[dict]:
+        if self._graph:
+            node_id = entity.lower().replace(" ", "_")
+            return self._graph.get_neighbors(node_id)
+        return []
+
+    # ==================== Stats ====================
 
     def get_store_stats(self) -> dict:
-        """Get statistics about the store."""
-        store_path, store = self._ensure_initialized()
-
-        # Count facts in current commit
-        current_facts = self._get_all_current_facts()
-        fact_count = len(current_facts)
-
-        # Count commits by walking from each branch head
-        commits = set()
-        branches = list_branches(store_path)
-        for branch_name, commit_hash in branches:
-            try:
-                commit = store.read_commit(commit_hash)
-                visited = set()
-
-                while commit and commit_hash not in visited:
-                    commits.add(commit_hash)
-                    visited.add(commit_hash)
-
-                    if commit.parent_hash:
-                        commit_hash = commit.parent_hash
-                        commit = store.read_commit(commit_hash)
-                    else:
-                        break
-            except Exception:
-                continue
-
-        # Count all objects
+        store_path, store = self._ensure()
         all_hashes = store.list_all_hashes()
-        object_count = len(all_hashes)
+        memory_count = 0
+        for h in all_hashes:
+            try:
+                store.read_memory(h)
+                memory_count += 1
+            except Exception:
+                pass
 
-        # Count open conflicts
+        branches = list_branches(store_path)
         open_conflicts = list_open_conflicts(store_path)
-        open_conflict_count = len(open_conflicts)
+
+        session_count = 0
+        if self._session_manager:
+            session_count = len(self._session_manager.list_sessions())
 
         return {
-            "fact_count": fact_count,
-            "commit_count": len(commits),
+            "memory_count": memory_count,
+            "commit_count": len(self.get_log()),
             "branch_count": len(branches),
-            "open_conflict_count": open_conflict_count,
-            "object_count": object_count,
+            "session_count": session_count,
+            "open_conflict_count": len(open_conflicts),
+            "object_count": len(all_hashes),
         }
+
+    # ==================== Export ====================
+
+    def export_memories(self, format: str = "markdown", branch: str | None = None) -> str:
+        """Export memories in the given format."""
+        memories = self.get_all_memories(branch=branch, skip=0, limit=10000)
+
+        if format == "json":
+            import json
+
+            return json.dumps([m.to_dict() for m in memories], indent=2)
+        elif format == "text":
+            return "\n".join(m.content for m in memories)
+        else:
+            lines = []
+            current_date = ""
+            for m in memories:
+                date = m.created_at[:10] if m.created_at else ""
+                if date != current_date:
+                    lines.append(f"\n## {date}\n")
+                    current_date = date
+                icon = {"conversation": "💬", "code": "🐍", "document": "📄", "file": "📁"}.get(
+                    m.memory_type.value, "💬"
+                )
+                lines.append(f"{icon} {m.content}")
+            return "\n".join(lines)

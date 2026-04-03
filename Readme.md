@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>Git-style versioned memory for any LLM.</strong>
+  <strong>Local-first, Git-style AI memory for Ollama.</strong>
 </p>
 
 <p align="center">
@@ -24,24 +24,27 @@
 
 Large Language Models are powerful, but they have a fundamental limitation: **they don't remember you**. Every conversation starts from scratch. You repeat your preferences, your context, your project details -- over and over.
 
-Existing solutions either send your data to the cloud or store it as raw text with no structure, no versioning, and no way to resolve contradictions when your information changes.
+Existing solutions either send your data to the cloud, require a database server, or store it as raw text with no versioning and no way to resolve contradictions.
 
 ## The Solution
 
-Memora is a local, versioned memory system that sits between you and your LLM. It automatically extracts facts from conversations, stores them as structured data with full version history, detects contradictions, and retrieves relevant context when you need it.
+Memora is a **local-first, versioned memory system** that sits transparently between you and Ollama. It captures conversations automatically, extracts human-readable memories, builds a knowledge graph, and stores everything with Git-style versioning -- all on your machine, no database required.
 
-Think of it as Git for your LLM's memory -- but instead of code, it tracks what you've told the AI about yourself.
+Think of it as Git for your LLM's memory. But instead of code, it tracks what you've told the AI about yourself.
 
 ## Key Features
 
-- **Automatic Memory Capture** -- Intercepts Ollama conversations and extracts facts without manual effort
+- **Automatic Memory Capture** -- Transparent HTTP proxy captures every Ollama conversation without changing your workflow
+- **Session Lifecycle & Auto-Commit** -- Sessions open on first chat, close on disconnect, and auto-commit with descriptive messages
+- **Human-Readable Storage** -- Memories are stored as natural language strings, not machine-format triples
+- **Knowledge Graph** -- NER entities become graph nodes (people, orgs, locations, tech) with relationship edges
 - **Versioned Storage** -- Every change is committed with full history, like Git commits
-- **Conflict Detection** -- Catches contradictions (e.g., "I live in NYC" vs "I live in LA") and resolves them automatically
-- **Branch-Based Organization** -- Separate memories by project, persona, or context
+- **Branch-Based Organization** -- Separate memories by project, persona, or context with auto-creation at size limits
+- **Selective Forgetting** -- `memora forget <id>` removes any memory from all stores
 - **Document Ingestion** -- Extract memories from TXT, Markdown, and PDF files
-- **Local-First** -- Nothing leaves your machine, no cloud dependencies
-- **REST API + Dashboard** -- Programmatic access and a web UI for browsing memories
-- **Code Intelligence** -- Detects and stores code snippets, function definitions, and class declarations
+- **Local-First** -- Nothing leaves your machine, no cloud, no database, no Docker
+- **REST API + 4-Panel Dashboard** -- Programmatic access and a web UI with Profile, Timeline, Branch, and Graph panels
+- **Code Intelligence** -- Detects and stores code snippets with language, function names, and summaries
 
 ## Quick Start
 
@@ -78,8 +81,8 @@ The setup wizard checks for Ollama, initializes storage, and guides you through 
 
 **Option 2: Automatic Memory Capture via Proxy**
 ```bash
-# Start the proxy in background
-poetry run memora proxy start --background
+# Start the proxy
+poetry run memora proxy start
 
 # Route Ollama through Memora proxy
 # Windows PowerShell:
@@ -113,115 +116,164 @@ poetry run python -c "from memora.interface.server import start_server; start_se
 |---------|-------------|
 | `memora init` | Initialize memory repository |
 | `memora setup` | Interactive setup wizard |
-| `memora version` | Show version |
+| `memora version` | Show version (3.0.0) |
+| `memora search "query"` | Search memories |
+| `memora stats` | Show memory statistics |
+| `memora where` | Show storage location |
 
 ### Memory Operations
 
 | Command | Description |
 |---------|-------------|
-| `memora add "text"` | Add a memory from text |
-| `memora search "query"` | Search memories |
-| `memora stats` | Show memory statistics |
-| `memora chat` | Interactive chat with memory context |
+| `memora ingest file.txt` | Extract memories from a file |
+| `memora forget <memory_id>` | Delete a specific memory (selective forgetting) |
+| `memora export --format json\|md\|txt` | Export all memories |
+
+### Session Management
+
+| Command | Description |
+|---------|-------------|
+| `memora session list` | List all sessions |
+| `memora session active` | Show active session |
 
 ### Branch Management
 
 | Command | Description |
 |---------|-------------|
 | `memora branch list` | List all branches |
+| `memora branch status` | Current branch size vs limits |
 | `memora branch create <name>` | Create a new branch |
 | `memora branch switch <name>` | Switch to a branch |
-| `memora branch delete <name>` | Delete a branch |
 
-### Document Ingestion
+### Knowledge Graph
 
 | Command | Description |
 |---------|-------------|
-| `memora ingest file.txt` | Extract memories from a file |
-| `memora ingest docs/ --recursive` | Process a directory of files |
+| `memora graph` | Show knowledge graph summary |
+| `memora graph query <entity>` | Show what the graph knows about an entity |
 
 ### Proxy Management
 
 | Command | Description |
 |---------|-------------|
 | `memora proxy start` | Start the Ollama proxy |
-| `memora proxy start --background` | Run as background daemon |
-| `memora proxy status` | Check proxy status |
 | `memora proxy stop` | Stop the proxy |
+| `memora proxy status` | Check proxy status |
+| `memora proxy-setup enable` | Configure OLLAMA_HOST system-wide |
+| `memora proxy-setup disable` | Remove OLLAMA_HOST |
 
 ## How It Works
 
-### Fact Extraction
+### Memory Extraction
 
-When you talk to an LLM, Memora extracts structured facts from the conversation:
+When you talk to an LLM, Memora extracts human-readable memories from the conversation:
 
 ```
 Input: "My name is Sarah. I live in Seattle and work at Microsoft. I prefer Python."
 ```
 
-Becomes structured facts:
+Becomes structured memories:
 
-| Entity | Attribute | Value | Confidence |
-|--------|-----------|-------|------------|
-| user | name | Sarah | 0.95 |
-| user | location | Seattle | 0.92 |
-| user | employer | Microsoft | 0.95 |
-| user | preference | Python | 0.90 |
+| Memory Content | Type | Confidence |
+|----------------|------|------------|
+| User's name is sarah | conversation | 0.95 |
+| User lives in seattle | conversation | 0.92 |
+| User works at Microsoft | conversation | 0.95 |
 
-### The NLP Pipeline
+Named entities (Sarah, Seattle, Microsoft) are sent to the **knowledge graph**, not the memory store -- eliminating junk facts from your dashboard.
 
-Memora uses a 5-stage extraction pipeline:
+### The Extraction Pipeline
 
-1. **Text Normalization** -- Splits input into sentences using spaCy
-2. **Pattern Matching** -- 20+ regex rules for first-person statements ("My name is...", "I work at...", "I prefer...")
-3. **Named Entity Recognition** -- spaCy NER detects people, organizations, locations, dates
-4. **Code Extraction** -- Detects code blocks, function definitions, class declarations
-5. **Deduplication** -- Identical facts from different sources collapse into one
+Memora uses a type-aware extraction pipeline:
+
+1. **Type Detection** -- Classifies input as conversation, code, document, or file
+2. **Type-Specific Extraction:**
+   - **Conversation:** Pattern matching → human-readable strings (20+ regex rules)
+   - **Code:** Language detection, function/class extraction, summary generation
+   - **Document:** Key fact extraction, filename tracking, word count
+3. **Named Entity Recognition** -- spaCy NER feeds the knowledge graph (not memory store)
+4. **Index Updates** -- Word, temporal, session, and type indices updated incrementally
+5. **Graph Updates** — NER entities added as nodes with relationship edges
+
+### Session Lifecycle
+
+Sessions replace manual commits entirely:
+
+```
+1. First Ollama request → opens a session
+2. Every chat message → accumulates memories into the session
+3. User disconnects or 15min silence → session closes
+4. Auto-commit fires → creates Git commit with descriptive message
+   → e.g. "lives in seattle, works at microsoft, name is sarah"
+5. User never runs `memora commit` — it's completely invisible
+```
+
+The 15-minute timeout is based on **last activity**, not start time. Every request resets the clock, so a user who pauses mid-conversation to make coffee won't trigger a timeout.
 
 ### Storage Architecture
 
 ```
 memora_data/
 └── .memora/
-    ├── objects/          # Content-addressable fact store (SHA-256)
+    ├── objects/          # Content-addressable memory store (SHA-256 + zlib)
     │   ├── ab/
-    │   │   └── cdef1234...  # Compressed fact data
+    │   │   └── cdef1234...  # Compressed memory object
     │   └── cd/
     │       └── ef567890...
     ├── refs/heads/       # Branch pointers (like Git refs)
     │   ├── main
+    │   ├── main-2        # Auto-created when main hits limit
     │   └── work
     ├── HEAD              # Current branch reference
-    ├── staging/          # Facts pending commit
+    ├── sessions/         # Session lifecycle
+    │   ├── active/       # Open sessions
+    │   └── closed/       # Completed sessions (auto-committed)
+    ├── graph/            # Knowledge graph
+    │   ├── nodes.json    # Entity nodes (person, org, location, tech)
+    │   └── edges.json    # Relationship edges
+    ├── index/            # 4 real incremental indices
+    │   ├── words.json    # word → [memory_ids]
+    │   ├── temporal.json # date → [memory_ids]
+    │   ├── sessions.json # session_id → [memory_ids]
+    │   └── types.json    # memory_type → [memory_ids]
+    ├── branches/
+    │   └── meta.json     # Branch size tracking
     ├── conflicts/        # Detected contradictions
     │   ├── open/
     │   └── resolved/
-    └── index/            # Performance indices
+    └── config            # All settings
 ```
+
+### Knowledge Graph
+
+The graph tracks entities and relationships separately from memories:
+
+```
+[User] --works_at--> [Microsoft]
+[User] --lives_in--> [Seattle]
+[User] --knows--> [Sarah]
+```
+
+The dashboard's Profile Card is assembled from graph data, showing works at, languages, tools, knows, and building at a glance.
 
 ### Conflict Resolution
 
-When you update information, Memora detects and resolves conflicts automatically:
+When you update information, Memora detects and resolves conflicts:
 
 ```
-Day 1: "I live in New York"    → Stored as fact
+Day 1: "I live in New York"    → Stored
 Day 30: "I live in Portland"   → Conflict detected!
+Result: TEMPORAL_SUPERSESSION → Portland wins (newer)
 ```
 
-Memora applies a 4-policy resolution chain:
-1. **Recency Policy** -- Newer fact wins if gap >= 7 days
-2. **Confidence Policy** -- Higher confidence wins if difference >= 0.3
-3. **Source Priority** -- Configurable source priority list
-4. **Manual Review** -- Flags for human review when automatic resolution isn't possible
+### Branch Management with Auto-Creation
 
-### Branch Isolation
+Branches have configurable limits (100 sessions, 5000 memories, 90 days). When a limit is hit:
 
-Each branch maintains its own commit chain. Facts added on one branch don't appear on another until you switch. This enables:
-
-- Separate work and personal memory contexts
-- Different LLM personas with distinct knowledge
-- Project-specific memory isolation
-- Safe experimentation without affecting main memories
+1. Current branch status → "full"
+2. New branch auto-created (main → main-2)
+3. Context inheritance: new branch inherits from the **entire predecessor chain** (main-3 → main-2 → main)
+4. The branch boundary is transparent to both user and LLM
 
 ## Architecture
 
@@ -232,13 +284,16 @@ Each branch maintains its own commit chain. Facts added on one branch don't appe
 ├─────────────────────────────────────────────────────┤
 │                    AI Layer                          │
 │  Ollama Proxy  │  Chat Engine  │  File Processor    │
+│  Type Detector │  Extractors  │  Conversational AI │
 ├─────────────────────────────────────────────────────┤
 │                   Core Engine                        │
-│  Ingestion Pipeline  │  Object Store  │  Conflicts  │
-│  Branch Management   │  Commits       │  Search     │
+│  Ingestion Pipeline  │  Object Store (LRU cached)  │
+│  Session Manager     │  Auto-Commit                │
+│  Knowledge Graph     │  4 Incremental Indices      │
+│  Branch Manager      │  Conflict Detection         │
 ├─────────────────────────────────────────────────────┤
 │                   Shared Models                      │
-│  Fact  │  MemoryTree  │  MemoryCommit  │  Conflict  │
+│  Memory  │  Session  │  GraphNode  │  GraphEdge    │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -280,6 +335,40 @@ poetry run mypy src/memora/
 poetry build
 ```
 
+### Project Structure
+
+```
+src/memora/
+├── shared/
+│   ├── models.py          # Memory, Session, GraphNode, GraphEdge dataclasses
+│   └── exceptions.py      # Custom exceptions
+├── core/
+│   ├── engine.py          # CoreEngine orchestrator
+│   ├── store.py           # ObjectStore with LRU cache
+│   ├── ingestion.py       # Type-aware extraction pipeline
+│   ├── session.py         # Session lifecycle (open → accumulate → close)
+│   ├── graph.py           # Knowledge graph (nodes, edges, profile)
+│   ├── index.py           # 4 real indices (word, temporal, session, type)
+│   ├── branch_manager.py  # Branch limits + auto-creation + chain inheritance
+│   ├── conflicts.py       # String-based conflict detection
+│   ├── refs.py            # Git-style branch pointers
+│   ├── type_detector.py   # Detect input type
+│   └── extractors/
+│       ├── conversation.py  # Pattern matching → human-readable strings
+│       ├── code.py          # Code block extraction with language detection
+│       └── document.py      # Document/file memory extraction
+├── ai/
+│   ├── ollama_proxy.py      # HTTP proxy with session management
+│   ├── file_processor.py    # Multi-format file ingestion
+│   └── conversational_ai.py # Ollama chat with context injection
+└── interface/
+    ├── cli.py               # CLI commands (Typer)
+    ├── server.py            # REST API (FastAPI, 20+ endpoints)
+    └── api.py               # MemoraStore facade
+```
+
+**24 Python source files. Zero dead code. Zero stubs. Zero TODOs.**
+
 ## Environment Variables
 
 | Variable | Purpose | Default |
@@ -288,6 +377,22 @@ poetry build
 | `MEMORA_MEMORY_PATH` | Memory storage path | `./memora_data` |
 | `MEMORA_PROXY_PORT` | Proxy port | `11435` |
 | `MEMORA_LOG_LEVEL` | Logging verbosity | `INFO` |
+
+## What Makes It Different
+
+| | Memora | Mem0 | Memoria |
+|---|---|---|---|
+| Requires database | No | Yes | Yes (MatrixOne) |
+| Requires Docker | No | No | Yes |
+| Requires LLM for storage | No | Yes | No |
+| Git versioning | Native | No | Via DB |
+| 100% local files | Yes | No | No |
+| Auto-commit on session end | Yes | No | No |
+| Branch size limits | Yes | No | No |
+| Knowledge graph | Yes | No | No |
+| Human-readable storage | Yes | No | No |
+| Selective forgetting | Yes | No | No |
+| Dead code / stubs | Zero | N/A | N/A |
 
 ## License
 

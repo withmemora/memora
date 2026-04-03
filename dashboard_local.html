@@ -3,956 +3,243 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Memora - Memory Dashboard</title>
+    <title>Memora</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
-        :root {
-            --bg: #09090b;
-            --surface: #18181b;
-            --surface-hover: #27272a;
-            --border: #27272a;
-            --border-hover: #3f3f46;
-            --text: #fafafa;
-            --text-muted: #a1a1aa;
-            --text-dim: #71717a;
-            --accent: #3b82f6;
-            --accent-hover: #2563eb;
-            --success: #22c55e;
-            --warning: #eab308;
-            --danger: #ef4444;
-            --purple: #a855f7;
-            --radius: 12px;
-            --radius-sm: 8px;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            line-height: 1.5;
-        }
-
-        .app {
-            display: flex;
-            min-height: 100vh;
-        }
-
-        /* Sidebar */
-        .sidebar {
-            width: 260px;
-            background: var(--surface);
-            border-right: 1px solid var(--border);
-            padding: 24px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            flex-shrink: 0;
-        }
-
-        .sidebar-logo {
-            font-size: 1.25rem;
-            font-weight: 700;
-            letter-spacing: 2px;
-            padding: 8px 12px;
-            margin-bottom: 16px;
-            color: var(--text);
-        }
-
-        .sidebar-logo span { color: var(--accent); }
-
-        .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            color: var(--text-muted);
-            font-size: 0.875rem;
-            font-weight: 500;
-            transition: all 0.15s;
-            border: none;
-            background: none;
-            width: 100%;
-            text-align: left;
-        }
-
-        .nav-item:hover { background: var(--surface-hover); color: var(--text); }
-        .nav-item.active { background: var(--accent); color: white; }
-
-        .nav-icon { width: 18px; height: 18px; flex-shrink: 0; }
-
-        .sidebar-section {
-            margin-top: 24px;
-            padding-top: 16px;
-            border-top: 1px solid var(--border);
-        }
-
-        .sidebar-label {
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: var(--text-dim);
-            padding: 0 12px;
-            margin-bottom: 8px;
-        }
-
-        .branch-list { display: flex; flex-direction: column; gap: 2px; }
-
-        .branch-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            border-radius: var(--radius-sm);
-            cursor: pointer;
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            transition: all 0.15s;
-        }
-
-        .branch-item:hover { background: var(--surface-hover); color: var(--text); }
-        .branch-item.active { background: var(--surface-hover); color: var(--success); }
-
-        .branch-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--text-dim);
-            flex-shrink: 0;
-        }
-
-        .branch-item.active .branch-dot { background: var(--success); }
-
-        /* Main content */
-        .main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .topbar {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 32px;
-            border-bottom: 1px solid var(--border);
-            background: var(--surface);
-        }
-
-        .topbar-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-        }
-
-        .topbar-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-        }
-
-        .search-bar {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 8px 12px;
-            min-width: 280px;
-        }
-
-        .search-bar:focus-within { border-color: var(--accent); }
-
-        .search-bar input {
-            background: none;
-            border: none;
-            color: var(--text);
-            font-size: 0.875rem;
-            outline: none;
-            width: 100%;
-        }
-
-        .search-bar input::placeholder { color: var(--text-dim); }
-
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 8px 16px;
-            border-radius: var(--radius-sm);
-            font-size: 0.8rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.15s;
-            border: 1px solid var(--border);
-            background: var(--surface);
-            color: var(--text);
-        }
-
-        .btn:hover { background: var(--surface-hover); border-color: var(--border-hover); }
-
-        .btn-primary {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: white;
-        }
-
-        .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-
-        .btn-sm { padding: 6px 10px; font-size: 0.75rem; }
-
-        /* Content area */
-        .content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 32px;
-        }
-
-        /* Stats row */
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 16px;
-            margin-bottom: 32px;
-        }
-
-        .stat-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 20px;
-        }
-
-        .stat-label {
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
-
-        .stat-value {
-            font-size: 1.75rem;
-            font-weight: 700;
-        }
-
-        .stat-sub {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 4px;
-        }
-
-        /* View panels */
-        .view-panel { display: none; }
-        .view-panel.active { display: block; }
-
-        /* Entity groups */
-        .entity-group {
-            margin-bottom: 24px;
-        }
-
-        .entity-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .entity-name {
-            font-size: 0.95rem;
-            font-weight: 600;
-            text-transform: capitalize;
-        }
-
-        .entity-count {
-            font-size: 0.7rem;
-            background: var(--surface-hover);
-            color: var(--text-muted);
-            padding: 2px 8px;
-            border-radius: 99px;
-        }
-
-        /* Memory rows */
-        .memory-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 16px;
-            padding: 14px 16px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            margin-bottom: 8px;
-            transition: all 0.15s;
-        }
-
-        .memory-row:hover {
-            border-color: var(--border-hover);
-            background: var(--surface-hover);
-        }
-
-        .memory-indicator {
-            width: 3px;
-            min-height: 40px;
-            border-radius: 2px;
-            flex-shrink: 0;
-        }
-
-        .memory-indicator.high { background: var(--success); }
-        .memory-indicator.medium { background: var(--warning); }
-        .memory-indicator.low { background: var(--danger); }
-        .memory-indicator.code { background: var(--purple); }
-
-        .memory-body { flex: 1; }
-
-        .memory-text {
-            font-size: 0.875rem;
-            color: var(--text);
-            margin-bottom: 6px;
-            line-height: 1.5;
-        }
-
-        .memory-details {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .detail-tag {
-            font-size: 0.7rem;
-            padding: 2px 8px;
-            border-radius: 4px;
-            background: var(--bg);
-            color: var(--text-muted);
-            font-weight: 500;
-        }
-
-        .detail-tag.confidence { color: var(--success); }
-        .detail-tag.source { color: var(--text-dim); }
-        .detail-tag.type { color: var(--accent); }
-
-        .memory-time {
-            font-size: 0.7rem;
-            color: var(--text-dim);
-            margin-left: auto;
-            white-space: nowrap;
-        }
-
-        /* Timeline view */
-        .timeline-item {
-            display: flex;
-            gap: 16px;
-            padding-bottom: 20px;
-            position: relative;
-        }
-
-        .timeline-item:not(:last-child)::before {
-            content: '';
-            position: absolute;
-            left: 11px;
-            top: 28px;
-            bottom: 0;
-            width: 2px;
-            background: var(--border);
-        }
-
-        .timeline-dot {
-            width: 24px;
-            height: 24px;
-            border-radius: 50%;
-            background: var(--accent);
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 0.6rem;
-            margin-top: 2px;
-        }
-
-        .timeline-content { flex: 1; }
-
-        .timeline-date {
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            margin-bottom: 4px;
-        }
-
-        /* Add memory modal */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.6);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal-overlay.active { display: flex; }
-
-        .modal {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 24px;
-            width: 90%;
-            max-width: 520px;
-        }
-
-        .modal-title {
-            font-size: 1.1rem;
-            font-weight: 600;
-            margin-bottom: 16px;
-        }
-
-        .modal textarea {
-            width: 100%;
-            min-height: 100px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            padding: 12px;
-            color: var(--text);
-            font-size: 0.875rem;
-            font-family: inherit;
-            resize: vertical;
-            outline: none;
-        }
-
-        .modal textarea:focus { border-color: var(--accent); }
-
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 8px;
-            margin-top: 16px;
-        }
-
-        /* Empty state */
-        .empty-state {
-            text-align: center;
-            padding: 80px 20px;
-            color: var(--text-dim);
-        }
-
-        .empty-state h3 {
-            font-size: 1.1rem;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .empty-state p { font-size: 0.875rem; }
-
-        /* Status messages */
-        .toast {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            padding: 12px 20px;
-            border-radius: var(--radius-sm);
-            font-size: 0.8rem;
-            font-weight: 500;
-            z-index: 200;
-            transform: translateY(100px);
-            opacity: 0;
-            transition: all 0.3s;
-        }
-
-        .toast.show { transform: translateY(0); opacity: 1; }
-        .toast.success { background: #064e3b; color: #6ee7b7; border: 1px solid #065f46; }
-        .toast.error { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
-
-        /* Loading */
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: var(--text-dim);
-        }
-
-        /* Commit log */
-        .commit-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 10px 16px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-sm);
-            margin-bottom: 6px;
-            font-size: 0.8rem;
-        }
-
-        .commit-hash {
-            font-family: 'SF Mono', 'Fira Code', monospace;
-            color: var(--accent);
-            font-size: 0.75rem;
-        }
-
-        .commit-msg { flex: 1; color: var(--text); }
-        .commit-author { color: var(--text-dim); }
-        .commit-time { color: var(--text-dim); font-size: 0.7rem; }
-
-        /* Responsive */
-        @media (max-width: 768px) {
-            .sidebar { display: none; }
-            .stats-row { grid-template-columns: repeat(2, 1fr); }
-            .content { padding: 16px; }
-        }
+        body { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; background: #000; color: #fff; min-height: 100vh; line-height: 1.6; font-size: 14px; }
+        a { color: #fff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .app { display: flex; min-height: 100vh; }
+
+        .sidebar { width: 180px; border-right: 1px solid #fff; padding: 20px 0; flex-shrink: 0; }
+        .sidebar h1 { font-size: 14px; font-weight: 700; padding: 0 20px 20px; letter-spacing: 0.1em; text-transform: uppercase; border-bottom: 1px solid #fff; margin-bottom: 0; }
+        .nav-item { padding: 8px 20px; cursor: pointer; font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; transition: background 0.1s; }
+        .nav-item:hover { background: #fff; color: #000; }
+        .nav-item.active { background: #fff; color: #000; }
+
+        .main { flex: 1; padding: 30px; overflow-y: auto; max-height: 100vh; }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 1px solid #fff; }
+        .header h2 { font-size: 14px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+        .header-actions { display: flex; gap: 10px; }
+        .btn { padding: 6px 14px; border: 1px solid #fff; background: #000; color: #fff; cursor: pointer; font-size: 11px; font-family: inherit; letter-spacing: 0.05em; text-transform: uppercase; transition: all 0.1s; }
+        .btn:hover { background: #fff; color: #000; }
+
+        .stats-row { display: flex; gap: 0; margin-bottom: 30px; border: 1px solid #fff; }
+        .stat-card { flex: 1; padding: 15px; border-right: 1px solid #fff; text-align: center; }
+        .stat-card:last-child { border-right: none; }
+        .stat-value { font-size: 24px; font-weight: 700; }
+        .stat-label { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; margin-top: 4px; opacity: 0.6; }
+
+        .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid #fff; }
+        .panel { padding: 20px; border-right: 1px solid #fff; border-bottom: 1px solid #fff; }
+        .panel:nth-child(even) { border-right: none; }
+        .panel:nth-last-child(-n+2) { border-bottom: none; }
+        .panel h3 { font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px solid #fff; }
+
+        .profile-card { display: flex; flex-direction: column; gap: 10px; }
+        .profile-row { display: flex; gap: 10px; align-items: baseline; }
+        .profile-label { opacity: 0.6; font-size: 12px; min-width: 80px; text-transform: uppercase; letter-spacing: 0.05em; }
+        .profile-value { font-size: 13px; }
+        .profile-value .tag { display: inline-block; border: 1px solid #fff; padding: 1px 8px; font-size: 11px; margin: 2px 4px 2px 0; }
+
+        .memory-timeline { display: flex; flex-direction: column; gap: 0; max-height: 350px; overflow-y: auto; }
+        .session-header { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; padding: 10px 0 6px; border-bottom: 1px solid #333; }
+        .memory-item { padding: 8px 0; border-bottom: 1px solid #222; }
+        .memory-item:last-child { border-bottom: none; }
+        .memory-content { font-size: 13px; }
+        .memory-meta { font-size: 10px; opacity: 0.4; margin-top: 3px; letter-spacing: 0.05em; }
+
+        .branch-bar { width: 100%; height: 4px; background: #222; margin: 8px 0; }
+        .branch-fill { height: 100%; background: #fff; transition: width 0.3s; }
+        .branch-info { font-size: 12px; opacity: 0.6; }
+        .branch-info span { color: #fff; font-weight: 700; }
+
+        .graph-container { min-height: 150px; }
+        .graph-node { display: inline-block; border: 1px solid #fff; padding: 2px 10px; font-size: 11px; margin: 3px; letter-spacing: 0.03em; }
+        .graph-edges { margin-top: 12px; font-size: 11px; opacity: 0.6; }
+        .graph-edge { padding: 3px 0; }
+        .graph-edge .relation { color: #fff; font-weight: 700; }
+
+        .empty-state { text-align: center; padding: 30px 10px; opacity: 0.4; }
+        .empty-state p { margin-top: 6px; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; }
+        .loading { text-align: center; padding: 15px; opacity: 0.4; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #fff; }
+
+        @media (max-width: 800px) { .panels { grid-template-columns: 1fr; } .sidebar { width: 50px; } .sidebar h1, .nav-item span { display: none; } .stat-card { padding: 10px 5px; } .stat-value { font-size: 18px; } }
     </style>
 </head>
 <body>
     <div class="app">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <div class="sidebar-logo">MEM<span>O</span>RA</div>
-
-            <button class="nav-item active" onclick="switchView('memories')">
-                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM9 3v18"/></svg>
-                Memories
-            </button>
-            <button class="nav-item" onclick="switchView('timeline')">
-                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                Timeline
-            </button>
-            <button class="nav-item" onclick="switchView('commits')">
-                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="18" r="3"/><circle cx="12" cy="6" r="3"/><path d="M12 9v6"/></svg>
-                Commits
-            </button>
-
-            <div class="sidebar-section">
-                <div class="sidebar-label">Branches</div>
-                <div class="branch-list" id="branchList">
-                    <div class="branch-item active">
-                        <div class="branch-dot"></div>
-                        <span>main</span>
-                    </div>
-                </div>
-                <button class="btn btn-sm" style="margin-top: 8px; width: 100%;" onclick="showCreateBranch()">+ New Branch</button>
-            </div>
-        </aside>
-
-        <!-- Main -->
-        <div class="main">
-            <div class="topbar">
-                <div class="topbar-title" id="viewTitle">Memories</div>
-                <div class="topbar-actions">
-                    <div class="search-bar">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-                        <input type="text" id="searchInput" placeholder="Search memories..." onkeyup="handleSearch(event)">
-                    </div>
-                    <button class="btn btn-primary" onclick="showAddMemory()">+ Add Memory</button>
+        <div class="sidebar">
+            <h1>Memora</h1>
+            <div class="nav-item active" onclick="showPanel('dashboard')"><span>Dashboard</span></div>
+            <div class="nav-item" onclick="showPanel('memories')"><span>Memories</span></div>
+            <div class="nav-item" onclick="showPanel('sessions')"><span>Sessions</span></div>
+            <div class="nav-item" onclick="showPanel('branches')"><span>Branches</span></div>
+            <div class="nav-item" onclick="showPanel('graph')"><span>Graph</span></div>
+            <div class="nav-item" onclick="showPanel('commits')"><span>Commits</span></div>
+        </div>
+        <div class="main" id="main-content">
+            <div class="header">
+                <h2>Dashboard</h2>
+                <div class="header-actions">
+                    <button class="btn" onclick="exportMemories('md')">Export MD</button>
+                    <button class="btn" onclick="exportMemories('json')">Export JSON</button>
+                    <button class="btn" onclick="refreshAll()">Refresh</button>
                 </div>
             </div>
-
-            <div class="content">
-                <!-- Memories View -->
-                <div class="view-panel active" id="memoriesView">
-                    <div class="stats-row" id="statsRow">
-                        <div class="stat-card">
-                            <div class="stat-label">Total Memories</div>
-                            <div class="stat-value" id="statMemories">0</div>
-                            <div class="stat-sub" id="statMemoriesSub">across all entities</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Commits</div>
-                            <div class="stat-value" id="statCommits">0</div>
-                            <div class="stat-sub" id="statCommitsSub">version history</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Branches</div>
-                            <div class="stat-value" id="statBranches">1</div>
-                            <div class="stat-sub" id="statBranchesSub">current: main</div>
-                        </div>
-                        <div class="stat-card">
-                            <div class="stat-label">Entities</div>
-                            <div class="stat-value" id="statEntities">0</div>
-                            <div class="stat-sub" id="statEntitiesSub">unique subjects</div>
-                        </div>
-                    </div>
-                    <div id="memoriesContainer">
-                        <div class="loading">Loading memories...</div>
-                    </div>
+            <div class="stats-row" id="stats-row"></div>
+            <div class="panels">
+                <div class="panel">
+                    <h3>Profile</h3>
+                    <div id="profile-content"><div class="loading">Loading...</div></div>
                 </div>
-
-                <!-- Timeline View -->
-                <div class="view-panel" id="timelineView">
-                    <div id="timelineContainer">
-                        <div class="loading">Loading timeline...</div>
-                    </div>
+                <div class="panel">
+                    <h3>Timeline</h3>
+                    <div id="timeline-content"><div class="loading">Loading...</div></div>
                 </div>
-
-                <!-- Commits View -->
-                <div class="view-panel" id="commitsView">
-                    <div id="commitsContainer">
-                        <div class="loading">Loading commits...</div>
-                    </div>
+                <div class="panel">
+                    <h3>Branch</h3>
+                    <div id="branch-content"><div class="loading">Loading...</div></div>
+                </div>
+                <div class="panel">
+                    <h3>Graph</h3>
+                    <div id="graph-content"><div class="loading">Loading...</div></div>
                 </div>
             </div>
         </div>
     </div>
-
-    <!-- Add Memory Modal -->
-    <div class="modal-overlay" id="addModal">
-        <div class="modal">
-            <div class="modal-title">Add Memory</div>
-            <textarea id="memoryInput" placeholder="Tell me something... (e.g., 'My name is John', 'I prefer Python', 'The project deadline is March 30')"></textarea>
-            <div class="modal-actions">
-                <button class="btn" onclick="closeModal('addModal')">Cancel</button>
-                <button class="btn btn-primary" onclick="submitMemory()">Save Memory</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Create Branch Modal -->
-    <div class="modal-overlay" id="branchModal">
-        <div class="modal">
-            <div class="modal-title">Create Branch</div>
-            <input type="text" id="branchInput" placeholder="Branch name (e.g., work, personal)" style="width:100%;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:0.875rem;outline:none;">
-            <div class="modal-actions">
-                <button class="btn" onclick="closeModal('branchModal')">Cancel</button>
-                <button class="btn btn-primary" onclick="submitBranch()">Create</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Toast -->
-    <div class="toast" id="toast"></div>
-
     <script>
-        let sessionId = null;
-        let allMemories = [];
-        let currentBranch = 'main';
-        let currentView = 'memories';
-        let statsData = {};
-
-        async function init() {
-            try {
-                const res = await fetch('/sessions', { method: 'POST' });
-                const data = await res.json();
-                sessionId = data.session_id;
-
-                await Promise.all([loadBranches(), loadMemories(), loadStats(), loadCommits()]);
-                showToast('Dashboard ready', 'success');
-            } catch (err) {
-                showToast('Connection error: ' + err.message, 'error');
-            }
+        const API = '';
+        async function api(path) {
+            const r = await fetch(`${API}${path}`);
+            if (!r.ok) throw new Error(`${path}: ${r.status}`);
+            return r.json();
         }
 
-        // Views
-        function switchView(view) {
-            currentView = view;
-            document.querySelectorAll('.view-panel').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-
-            const viewMap = { memories: 'memoriesView', timeline: 'timelineView', commits: 'commitsView' };
-            const titleMap = { memories: 'Memories', timeline: 'Timeline', commits: 'Commit History' };
-
-            document.getElementById(viewMap[view]).classList.add('active');
-            document.getElementById('viewTitle').textContent = titleMap[view];
-
-            const navItems = document.querySelectorAll('.nav-item');
-            const idx = { memories: 0, timeline: 1, commits: 2 }[view];
-            if (navItems[idx]) navItems[idx].classList.add('active');
-
-            if (view === 'timeline') loadTimeline();
-            if (view === 'commits') loadCommits();
+        async function refreshAll() {
+            await Promise.all([loadStats(), loadProfile(), loadTimeline(), loadBranch(), loadGraph()]);
         }
 
-        // Load stats
         async function loadStats() {
             try {
-                const res = await fetch('/stats');
-                const data = await res.json();
-                if (data.success) {
-                    statsData = data.data;
-                    document.getElementById('statMemories').textContent = data.data.total_memories || 0;
-                    document.getElementById('statCommits').textContent = data.data.total_commits || 0;
-                    document.getElementById('statBranches').textContent = data.data.total_branches || 1;
-                    document.getElementById('statCommitsSub').textContent = data.data.last_commit ? timeAgo(data.data.last_commit) : 'version history';
-                    document.getElementById('statBranchesSub').textContent = 'current: ' + (data.data.current_branch || 'main');
-                }
-            } catch (err) { console.error('Stats error:', err); }
+                const d = await api('/stats');
+                const s = d.data;
+                document.getElementById('stats-row').innerHTML = `
+                    <div class="stat-card"><div class="stat-value">${s.total_memories}</div><div class="stat-label">Memories</div></div>
+                    <div class="stat-card"><div class="stat-value">${s.total_commits}</div><div class="stat-label">Commits</div></div>
+                    <div class="stat-card"><div class="stat-value">${s.total_sessions}</div><div class="stat-label">Sessions</div></div>
+                    <div class="stat-card"><div class="stat-value">${s.current_branch}</div><div class="stat-label">Branch</div></div>
+                `;
+            } catch(e) { console.error('Stats:', e); }
         }
 
-        // Load branches
-        async function loadBranches() {
+        async function loadProfile() {
             try {
-                const res = await fetch('/branches');
-                const data = await res.json();
-                if (data.success) {
-                    currentBranch = data.current_branch || 'main';
-                    renderBranches(data.branches || []);
-                }
-            } catch (err) { console.error('Branch error:', err); }
-        }
-
-        function renderBranches(branches) {
-            const container = document.getElementById('branchList');
-            container.innerHTML = branches.map(b => `
-                <div class="branch-item ${b.is_current ? 'active' : ''}" onclick="doSwitchBranch('${b.name}')">
-                    <div class="branch-dot"></div>
-                    <span>${escapeHtml(b.name)}</span>
-                </div>
-            `).join('');
-            document.getElementById('statBranches').textContent = branches.length;
-            document.getElementById('statBranchesSub').textContent = 'current: ' + currentBranch;
-        }
-
-        async function doSwitchBranch(name) {
-            if (name === currentBranch) return;
-            try {
-                const res = await fetch(`/branches/${name}`, { method: 'PUT' });
-                const data = await res.json();
-                if (data.success) {
-                    currentBranch = name;
-                    await Promise.all([loadBranches(), loadMemories(), loadStats()]);
-                    showToast(`Switched to ${name}`, 'success');
-                }
-            } catch (err) { showToast('Branch switch failed', 'error'); }
-        }
-
-        function showCreateBranch() {
-            document.getElementById('branchInput').value = '';
-            document.getElementById('branchModal').classList.add('active');
-        }
-
-        async function submitBranch() {
-            const name = document.getElementById('branchInput').value.trim();
-            if (!name) return;
-            try {
-                const res = await fetch('/branches', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    closeModal('branchModal');
-                    await loadBranches();
-                    showToast(`Branch '${name}' created`, 'success');
-                }
-            } catch (err) { showToast('Failed to create branch', 'error'); }
-        }
-
-        // Load memories
-        async function loadMemories() {
-            try {
-                const res = await fetch('/memory/search', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: '', limit: 200, branch: currentBranch })
-                });
-                const data = await res.json();
-                if (data.success) {
-                    allMemories = data.data.memories || [];
-                    renderMemories(allMemories);
-                    const entities = new Set();
-                    allMemories.forEach(m => (m.entities || []).forEach(e => entities.add(e)));
-                    document.getElementById('statEntities').textContent = entities.size;
-                    document.getElementById('statMemoriesSub').textContent = `across ${entities.size} entit${entities.size === 1 ? 'y' : 'ies'}`;
-                }
-            } catch (err) {
-                document.getElementById('memoriesContainer').innerHTML = '<div class="empty-state"><h3>Unable to load memories</h3><p>Check that the server is running</p></div>';
-            }
-        }
-
-        function renderMemories(memories) {
-            const container = document.getElementById('memoriesContainer');
-            if (!memories.length) {
-                container.innerHTML = '<div class="empty-state"><h3>No memories yet</h3><p>Add your first memory or start a conversation with Ollama</p></div>';
-                return;
-            }
-
-            // Group by entity
-            const groups = {};
-            memories.forEach(m => {
-                const entity = (m.entities && m.entities[0]) || 'general';
-                if (!groups[entity]) groups[entity] = [];
-                groups[entity].push(m);
-            });
-
-            let html = '';
-            for (const [entity, items] of Object.entries(groups)) {
-                html += `<div class="entity-group">
-                    <div class="entity-header">
-                        <span class="entity-name">${escapeHtml(entity)}</span>
-                        <span class="entity-count">${items.length}</span>
-                    </div>`;
-                items.forEach(m => { html += memoryRow(m); });
+                const d = await api('/graph/profile');
+                const p = d.profile;
+                let html = '<div class="profile-card">';
+                if (p.works_at?.length) html += row('Works at', p.works_at);
+                if (p.languages?.length) html += row('Languages', p.languages);
+                if (p.tools?.length) html += row('Tools', p.tools);
+                if (p.knows?.length) html += row('Knows', p.knows);
+                if (p.building?.length) html += row('Building', p.building);
+                if (p.considering?.length) html += row('Considering', p.considering);
+                if (!p.works_at?.length && !p.languages?.length && !p.knows?.length && !p.building?.length && !p.tools?.length)
+                    html = '<div class="empty-state"><p>No profile data yet</p><p>Chat with Ollama to build your profile</p></div>';
                 html += '</div>';
-            }
-            container.innerHTML = html;
+                document.getElementById('profile-content').innerHTML = html;
+            } catch(e) { document.getElementById('profile-content').innerHTML = '<div class="empty-state"><p>Graph unavailable</p></div>'; }
         }
 
-        function memoryRow(m) {
-            const conf = Math.round((m.confidence || 0) * 100);
-            const level = conf >= 80 ? 'high' : conf >= 50 ? 'medium' : 'low';
-            const isCode = (m.categories || []).some(c => c.includes('code') || c.includes('technical'));
-            const indicatorClass = isCode ? 'code' : level;
-            const time = m.created_at ? timeAgo(m.created_at) : '';
-            const cats = (m.categories || []).filter(c => c !== 'general').slice(0, 3);
-
-            return `<div class="memory-row">
-                <div class="memory-indicator ${indicatorClass}"></div>
-                <div class="memory-body">
-                    <div class="memory-text">${escapeHtml(m.memory || '')}</div>
-                    <div class="memory-details">
-                        <span class="detail-tag confidence">${conf}%</span>
-                        ${cats.map(c => `<span class="detail-tag type">${escapeHtml(c)}</span>`).join('')}
-                        <span class="detail-tag source">${escapeHtml(m.source || '')}</span>
-                        <span class="memory-time">${time}</span>
-                    </div>
-                </div>
-            </div>`;
+        function row(label, items) {
+            return `<div class="profile-row"><span class="profile-label">${label}</span><span class="profile-value">${items.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</span></div>`;
         }
 
-        // Timeline
         async function loadTimeline() {
             try {
-                const res = await fetch('/memory/timeline');
-                const data = await res.json();
-                const container = document.getElementById('timelineContainer');
-                if (data.success && data.data && data.data.timeline && data.data.timeline.length) {
-                    const items = data.data.timeline;
-                    container.innerHTML = items.map(m => {
-                        const date = m.created_at ? new Date(m.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
-                        const time = m.created_at ? new Date(m.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
-                        return `<div class="timeline-item">
-                            <div class="timeline-dot"></div>
-                            <div class="timeline-content">
-                                <div class="timeline-date">${date} at ${time}</div>
-                                <div class="memory-text">${escapeHtml(m.memory || '')}</div>
-                                <div class="memory-details">
-                                    <span class="detail-tag confidence">${Math.round((m.confidence || 0) * 100)}%</span>
-                                    <span class="detail-tag source">${escapeHtml(m.source || '')}</span>
-                                </div>
-                            </div>
-                        </div>`;
-                    }).join('');
-                } else {
-                    container.innerHTML = '<div class="empty-state"><h3>No timeline entries</h3><p>Memories will appear here as they are added</p></div>';
-                }
-            } catch (err) {
-                document.getElementById('timelineContainer').innerHTML = '<div class="empty-state"><h3>Unable to load timeline</h3></div>';
-            }
-        }
-
-        // Commits
-        async function loadCommits() {
-            try {
-                const res = await fetch('/commits?limit=50');
-                const data = await res.json();
-                const container = document.getElementById('commitsContainer');
-                if (data.success && data.commits && data.commits.length) {
-                    container.innerHTML = data.commits.map(c => `
-                        <div class="commit-row">
-                            <span class="commit-hash">${escapeHtml(c.hash || 'unknown')}</span>
-                            <span class="commit-msg">${escapeHtml(c.message || '')}</span>
-                            <span class="commit-author">${escapeHtml(c.author || '')}</span>
-                            <span class="commit-time">${c.committed_at ? timeAgo(c.committed_at) : ''}</span>
-                        </div>
-                    `).join('');
-                } else {
-                    container.innerHTML = '<div class="empty-state"><h3>No commits yet</h3><p>Commits are created when memories are added</p></div>';
-                }
-            } catch (err) {
-                document.getElementById('commitsContainer').innerHTML = '<div class="empty-state"><h3>Unable to load commits</h3></div>';
-            }
-        }
-
-        // Add memory
-        function showAddMemory() {
-            document.getElementById('memoryInput').value = '';
-            document.getElementById('addModal').classList.add('active');
-            setTimeout(() => document.getElementById('memoryInput').focus(), 100);
-        }
-
-        async function submitMemory() {
-            const text = document.getElementById('memoryInput').value.trim();
-            if (!text) return;
-            try {
-                const res = await fetch('/memory', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ message: text, source: 'dashboard', branch: currentBranch })
+                const d = await api('/memory/timeline');
+                const memories = d.timeline || [];
+                if (!memories.length) { document.getElementById('timeline-content').innerHTML = '<div class="empty-state"><p>No memories yet</p><p>Chat with Ollama to start capturing</p></div>'; return; }
+                let html = '<div class="memory-timeline">';
+                let currentDate = '';
+                memories.slice(0, 30).forEach(m => {
+                    const date = m.created_at?.slice(0, 10) || '';
+                    if (date !== currentDate) { html += `<div class="session-header">${date}</div>`; currentDate = date; }
+                    html += `<div class="memory-item"><div class="memory-content">${esc(m.content)}</div><div class="memory-meta">${m.confidence ? m.confidence.toFixed(2) + '  ' : ''}${m.source || ''}</div></div>`;
                 });
-                const data = await res.json();
-                if (data.success) {
-                    closeModal('addModal');
-                    await Promise.all([loadMemories(), loadStats()]);
-                    const count = data.count || 0;
-                    showToast(`Added ${count} memor${count === 1 ? 'y' : 'ies'}`, 'success');
-                }
-            } catch (err) { showToast('Failed to add memory', 'error'); }
+                html += '</div>';
+                document.getElementById('timeline-content').innerHTML = html;
+            } catch(e) { document.getElementById('timeline-content').innerHTML = '<div class="empty-state"><p>Timeline unavailable</p></div>'; }
         }
 
-        // Search
-        function handleSearch(e) {
-            if (e.key === 'Enter') doSearch();
-        }
-
-        async function doSearch() {
-            const q = document.getElementById('searchInput').value.trim();
-            if (!q) { loadMemories(); return; }
+        async function loadBranch() {
             try {
-                const res = await fetch('/memory/search', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: q, limit: 100 })
+                const d = await api('/branches/status');
+                const branches = d.branches || [];
+                if (!branches.length) { document.getElementById('branch-content').innerHTML = '<div class="empty-state"><p>No branches yet</p></div>'; return; }
+                let html = '';
+                branches.forEach(b => {
+                    const isCurrent = b.name === d.current_branch;
+                    html += `<div style="margin-bottom:16px">`;
+                    html += `<div style="font-weight:700;font-size:12px;letter-spacing:0.05em;text-transform:uppercase">${b.name} ${isCurrent ? '<span style="opacity:0.5">(current)</span>' : ''}</div>`;
+                    html += `<div class="branch-bar"><div class="branch-fill" style="width:${b.session_pct}%"></div></div>`;
+                    html += `<div class="branch-info"><span>${b.session_count}</span> / ${b.session_limit} sessions  ·  <span>${b.memory_count}</span> / ${b.memory_limit} memories</div>`;
+                    html += `<div class="branch-info" style="margin-top:4px">Status: ${b.status}</div>`;
+                    html += `</div>`;
                 });
-                const data = await res.json();
-                if (data.success) {
-                    allMemories = data.data.memories || [];
-                    if (currentView === 'memories') renderMemories(allMemories);
+                document.getElementById('branch-content').innerHTML = html;
+            } catch(e) { document.getElementById('branch-content').innerHTML = '<div class="empty-state"><p>Branch info unavailable</p></div>'; }
+        }
+
+        async function loadGraph() {
+            try {
+                const d = await api('/graph/nodes');
+                const nodes = d.nodes || [];
+                const edges = await api('/graph/edges');
+                const edgeList = edges.edges || [];
+                if (!nodes.length) { document.getElementById('graph-content').innerHTML = '<div class="empty-state"><p>No graph data yet</p><p>NER entities will appear here</p></div>'; return; }
+                let html = '<div class="graph-container">';
+                html += '<div>';
+                nodes.slice(0, 20).forEach(n => { html += `<span class="graph-node">${esc(n.name)}</span>`; });
+                html += '</div>';
+                if (edgeList.length) {
+                    html += '<div class="graph-edges">';
+                    edgeList.slice(0, 10).forEach(e => {
+                        if (!e.superseded_at) html += `<div class="graph-edge">${esc(e.source)} <span class="relation">--${esc(e.relation)}--></span> ${esc(e.target)}</div>`;
+                    });
+                    html += '</div>';
                 }
-            } catch (err) { showToast('Search failed', 'error'); }
+                html += '</div>';
+                document.getElementById('graph-content').innerHTML = html;
+            } catch(e) { document.getElementById('graph-content').innerHTML = '<div class="empty-state"><p>Graph unavailable</p></div>'; }
         }
 
-        // Modal helpers
-        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-
-        document.querySelectorAll('.modal-overlay').forEach(overlay => {
-            overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) overlay.classList.remove('active');
-            });
-        });
-
-        // Toast
-        function showToast(msg, type) {
-            const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = `toast ${type} show`;
-            setTimeout(() => t.classList.remove('show'), 3000);
+        async function exportMemories(format) {
+            try {
+                const d = await api(`/memory/export?format=${format}`);
+                const blob = new Blob([d.data], {type: format === 'json' ? 'application/json' : 'text/markdown'});
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `memora-export.${format === 'json' ? 'json' : 'md'}`;
+                a.click();
+            } catch(e) { alert('Export failed: ' + e.message); }
         }
 
-        // Utilities
-        function escapeHtml(text) {
-            const d = document.createElement('div');
-            d.textContent = text;
-            return d.innerHTML;
+        function showPanel(panel) {
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            event.target.closest('.nav-item').classList.add('active');
         }
 
-        function timeAgo(dateStr) {
-            if (!dateStr) return '';
-            const now = new Date();
-            const date = new Date(dateStr);
-            const diff = Math.floor((now - date) / 1000);
-            if (diff < 60) return 'just now';
-            if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
-            if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
-            if (diff < 604800) return Math.floor(diff / 86400) + 'd ago';
-            return date.toLocaleDateString();
-        }
+        function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-        // Init
-        document.addEventListener('DOMContentLoaded', init);
+        refreshAll();
+        setInterval(refreshAll, 30000);
     </script>
 </body>
 </html>

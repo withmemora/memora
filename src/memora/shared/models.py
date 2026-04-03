@@ -1,35 +1,41 @@
-"""Core data models for Memora.
+"""Core data models for Memora v3.0.
 
-This module defines all data structures used throughout the Memora system.
-These models form the contract between the core, interface, and shared layers.
+This module defines the new data model: Memory objects (not Fact triples),
+Session lifecycle tracking, and supporting enums.
 """
 
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 
-class ContentType(Enum):
-    """Type of content extracted from conversation."""
+class MemoryType(Enum):
+    """Type of memory content."""
 
-    PLAIN_TEXT = "plain_text"
-    TRIPLE = "triple"
-    DATE_VALUE = "date_value"
-    PREFERENCE = "preference"
-    CODE_SNIPPET = "code_snippet"  # Code shared in conversations
-    FILE_CONTENT = "file_content"  # Content from ingested files
+    CONVERSATION = "conversation"
+    CODE = "code"
+    DOCUMENT = "document"
+    FILE = "file"
+
+
+class MemorySource(Enum):
+    """Where a memory came from."""
+
+    OLLAMA_CHAT = "ollama_chat"
+    FILE_INGESTION = "file_ingestion"
+    MANUAL = "manual"
 
 
 class ConflictType(Enum):
-    """Classification of conflict between facts."""
+    """Classification of conflict between memories."""
 
-    DIRECT_CONTRADICTION = "direct_contradiction"
     TEMPORAL_SUPERSESSION = "temporal_supersession"
     SOURCE_CONFLICT = "source_conflict"
-    SCOPE_CONFLICT = "scope_conflict"
+    DIRECT_CONTRADICTION = "direct_contradiction"
     UNCERTAIN = "uncertain"
 
 
@@ -39,246 +45,277 @@ class ConflictStatus(Enum):
     UNRESOLVED = "unresolved"
     AUTO_RESOLVED = "auto_resolved"
     USER_RESOLVED = "user_resolved"
-    AGENT_RESOLVED = "agent_resolved"
 
 
 @dataclass
-class Fact:
-    """A single extracted piece of information from conversation.
+class Memory:
+    """A single piece of human-readable memory.
 
-    Facts are the atomic unit of memory in Memora. Each fact represents
-    a single piece of information with provenance, confidence, and temporal data.
-
-    The hash is computed from ONLY: content_type + entity.lower() + attribute.lower() + value
-    This means facts with identical semantic content but different sources, timestamps,
-    or confidence scores will deduplicate to the same hash.
+    Unlike the old Fact model (entity-attribute-value triples),
+    Memory.content is ALWAYS a human-readable string.
     """
 
-    content: str  # Raw source sentence this was extracted from
-    content_type: ContentType
-    entity: str  # Lowercase normalized entity name
-    attribute: str  # Lowercase normalized attribute name
-    value: str  # The actual value
-    source: str  # Provenance (e.g., "conversation:session-001")
-    observed_at: datetime  # UTC timestamp
-    confidence: float  # 0.0 to 1.0
+    id: str
+    content: str
+    memory_type: MemoryType
+    confidence: float
+    source: MemorySource
+    session_id: str
+    branch: str
+    turn_index: int
+    created_at: str
+    updated_at: str
+    supersedes: str | None = None
+    entities: list[str] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
+
+    @staticmethod
+    def generate_id() -> str:
+        return f"mem_{uuid.uuid4().hex[:12]}"
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "content": self.content,
+            "memory_type": self.memory_type.value,
+            "confidence": self.confidence,
+            "source": self.source.value,
+            "session_id": self.session_id,
+            "branch": self.branch,
+            "turn_index": self.turn_index,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "supersedes": self.supersedes,
+            "entities": self.entities,
+            "metadata": self.metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Memory:
+        return cls(
+            id=d["id"],
+            content=d["content"],
+            memory_type=MemoryType(d["memory_type"]),
+            confidence=d["confidence"],
+            source=MemorySource(d["source"]),
+            session_id=d["session_id"],
+            branch=d["branch"],
+            turn_index=d["turn_index"],
+            created_at=d["created_at"],
+            updated_at=d["updated_at"],
+            supersedes=d.get("supersedes"),
+            entities=d.get("entities", []),
+            metadata=d.get("metadata", {}),
+        )
 
     def compute_hash(self) -> str:
-        """Compute SHA-256 hash from content_type, entity, attribute, and value only.
-
-        Source, observed_at, and confidence are EXCLUDED from hash computation.
-        This allows deduplication of semantically identical facts from different sources.
-
-        Returns:
-            64-character hex string (SHA-256 hash)
-        """
-        # Normalize and concatenate the fields that define semantic identity
-        hash_input = (
-            f"{self.content_type.value}{self.entity.lower()}{self.attribute.lower()}{self.value}"
-        )
+        hash_input = f"{self.content.lower()}{self.memory_type.value}{self.session_id}"
         return hashlib.sha256(hash_input.encode("utf-8")).hexdigest()
 
-    def to_dict(self) -> dict:
-        """Convert Fact to dictionary for serialization.
-
-        Returns:
-            Dictionary with all fields, datetime as ISO 8601 string
-        """
-        return {
-            "content": self.content,
-            "content_type": self.content_type.value,
-            "entity": self.entity,
-            "attribute": self.attribute,
-            "value": self.value,
-            "source": self.source,
-            "observed_at": self.observed_at.isoformat(),
-            "confidence": self.confidence,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> Fact:
-        """Construct Fact from dictionary.
-
-        Args:
-            d: Dictionary with fact data
-
-        Returns:
-            Fact instance
-        """
-        return cls(
-            content=d["content"],
-            content_type=ContentType(d["content_type"]),
-            entity=d["entity"],
-            attribute=d["attribute"],
-            value=d["value"],
-            source=d["source"],
-            observed_at=datetime.fromisoformat(d["observed_at"]),
-            confidence=d["confidence"],
-        )
-
 
 @dataclass
-class MemoryTreeEntry:
-    """Single entry in a memory tree (either a fact or subtree reference).
+class Session:
+    """A single Ollama chat session."""
 
-    Memory trees organize facts hierarchically, similar to Git trees.
-    Each entry points to either a fact object or another tree object.
-    """
+    id: str
+    branch: str
+    started_at: str
+    ended_at: str | None = None
+    ollama_model: str = ""
+    memory_ids: list[str] = field(default_factory=list)
+    commit_hash: str | None = None
+    auto_commit_message: str | None = None
+    files_ingested: list[str] = field(default_factory=list)
 
-    name: str  # Entry name (e.g., "user", "project")
-    entry_type: str  # "fact" or "subtree"
-    hash: str  # SHA-256 hash of the referenced object
+    @staticmethod
+    def generate_id() -> str:
+        return f"sess_{uuid.uuid4().hex[:12]}"
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
         return {
-            "name": self.name,
-            "entry_type": self.entry_type,
-            "hash": self.hash,
+            "id": self.id,
+            "branch": self.branch,
+            "started_at": self.started_at,
+            "ended_at": self.ended_at,
+            "ollama_model": self.ollama_model,
+            "memory_ids": self.memory_ids,
+            "commit_hash": self.commit_hash,
+            "auto_commit_message": self.auto_commit_message,
+            "files_ingested": self.files_ingested,
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> MemoryTreeEntry:
-        """Construct from dictionary."""
+    def from_dict(cls, d: dict) -> Session:
         return cls(
-            name=d["name"],
-            entry_type=d["entry_type"],
-            hash=d["hash"],
-        )
-
-
-@dataclass
-class MemoryTree:
-    """Hierarchical tree structure organizing facts, similar to Git trees.
-
-    Trees allow organizing facts into a hierarchy (e.g., user/name, project/deadline).
-    Each tree contains entries that point to either facts or other trees.
-    """
-
-    entries: list[MemoryTreeEntry] = field(default_factory=list)
-
-    def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
-        return {
-            "entries": [entry.to_dict() for entry in self.entries],
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> MemoryTree:
-        """Construct from dictionary."""
-        return cls(
-            entries=[MemoryTreeEntry.from_dict(e) for e in d["entries"]],
+            id=d["id"],
+            branch=d["branch"],
+            started_at=d["started_at"],
+            ended_at=d.get("ended_at"),
+            ollama_model=d.get("ollama_model", ""),
+            memory_ids=d.get("memory_ids", []),
+            commit_hash=d.get("commit_hash"),
+            auto_commit_message=d.get("auto_commit_message"),
+            files_ingested=d.get("files_ingested", []),
         )
 
 
 @dataclass
 class MemoryCommit:
-    """A commit representing a snapshot of memory state, similar to Git commits.
+    """A commit representing a snapshot of memory state."""
 
-    Commits create an immutable, versioned history of memory states.
-    Each commit points to a root tree and optionally to a parent commit.
-    """
-
-    root_tree_hash: str  # SHA-256 hash of root tree
-    parent_hash: str | None  # SHA-256 of parent commit, None for first commit
-    author: str  # Author identifier
-    message: str  # Commit message describing changes
-    committed_at: datetime  # UTC timestamp
+    root_tree_hash: str
+    parent_hash: str | None
+    author: str
+    message: str
+    committed_at: str
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
         return {
             "root_tree_hash": self.root_tree_hash,
             "parent_hash": self.parent_hash,
             "author": self.author,
             "message": self.message,
-            "committed_at": self.committed_at.isoformat(),
+            "committed_at": self.committed_at,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> MemoryCommit:
-        """Construct from dictionary."""
         return cls(
             root_tree_hash=d["root_tree_hash"],
-            parent_hash=d["parent_hash"],
+            parent_hash=d.get("parent_hash"),
             author=d["author"],
             message=d["message"],
-            committed_at=datetime.fromisoformat(d["committed_at"]),
+            committed_at=d["committed_at"],
         )
+
+
+@dataclass
+class MemoryTree:
+    """Collection of memory references, similar to Git trees."""
+
+    memory_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {"memory_ids": self.memory_ids}
+
+    @classmethod
+    def from_dict(cls, d: dict) -> MemoryTree:
+        return cls(memory_ids=d.get("memory_ids", []))
 
 
 @dataclass
 class Conflict:
-    """Detected conflict between two facts.
+    """Detected conflict between two memories."""
 
-    Conflicts represent contradictions or inconsistencies between facts.
-    They track the conflicting facts, classification, and resolution state.
-    """
-
-    conflict_id: str  # SHA-256 of (fact_a_hash + fact_b_hash + detected_at)
-    fact_a_hash: str  # SHA-256 of first fact
-    fact_b_hash: str  # SHA-256 of second fact
-    conflict_type: ConflictType  # Classification of conflict
-    conflict_status: ConflictStatus  # Resolution status
-    detected_at: datetime  # UTC timestamp of detection
-    resolution_fact_hash: str | None  # Hash of fact chosen as resolution
-    resolution_reason: str | None  # Explanation of resolution
-    resolved_at: datetime | None  # UTC timestamp of resolution
+    conflict_id: str
+    memory_a_id: str
+    memory_b_id: str
+    conflict_type: ConflictType
+    conflict_status: ConflictStatus
+    detected_at: str
+    resolution_memory_id: str | None = None
+    resolution_reason: str | None = None
+    resolved_at: str | None = None
 
     def to_dict(self) -> dict:
-        """Convert to dictionary for serialization."""
         return {
             "conflict_id": self.conflict_id,
-            "fact_a_hash": self.fact_a_hash,
-            "fact_b_hash": self.fact_b_hash,
+            "memory_a_id": self.memory_a_id,
+            "memory_b_id": self.memory_b_id,
             "conflict_type": self.conflict_type.value,
             "conflict_status": self.conflict_status.value,
-            "detected_at": self.detected_at.isoformat(),
-            "resolution_fact_hash": self.resolution_fact_hash,
+            "detected_at": self.detected_at,
+            "resolution_memory_id": self.resolution_memory_id,
             "resolution_reason": self.resolution_reason,
-            "resolved_at": self.resolved_at.isoformat() if self.resolved_at else None,
+            "resolved_at": self.resolved_at,
         }
 
     @classmethod
     def from_dict(cls, d: dict) -> Conflict:
-        """Construct from dictionary."""
         return cls(
             conflict_id=d["conflict_id"],
-            fact_a_hash=d["fact_a_hash"],
-            fact_b_hash=d["fact_b_hash"],
+            memory_a_id=d["memory_a_id"],
+            memory_b_id=d["memory_b_id"],
             conflict_type=ConflictType(d["conflict_type"]),
             conflict_status=ConflictStatus(d["conflict_status"]),
-            detected_at=datetime.fromisoformat(d["detected_at"]),
-            resolution_fact_hash=d.get("resolution_fact_hash"),
+            detected_at=d["detected_at"],
+            resolution_memory_id=d.get("resolution_memory_id"),
             resolution_reason=d.get("resolution_reason"),
-            resolved_at=datetime.fromisoformat(d["resolved_at"]) if d.get("resolved_at") else None,
+            resolved_at=d.get("resolved_at"),
         )
 
 
 @dataclass
-class QueryResult:
-    """Result of a memory query operation.
+class GraphNode:
+    """A node in the knowledge graph."""
 
-    Contains the facts matching a query along with metadata about
-    the query execution and context.
-    """
+    id: str
+    name: str
+    type: str
+    first_seen: str
+    last_seen: str
+    memory_count: int = 0
 
-    facts: list[tuple[str, Fact]]  # List of (hash, fact) tuples
-    query_time: float  # Query execution time in seconds
-    branch: str  # Branch name queried
-    total_found: int  # Total number of facts found
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "type": self.type,
+            "first_seen": self.first_seen,
+            "last_seen": self.last_seen,
+            "memory_count": self.memory_count,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> GraphNode:
+        return cls(
+            id=d["id"],
+            name=d["name"],
+            type=d["type"],
+            first_seen=d["first_seen"],
+            last_seen=d["last_seen"],
+            memory_count=d.get("memory_count", 0),
+        )
 
 
 @dataclass
-class ContextBlock:
-    """Formatted memory context ready for injection into LLM prompt.
+class GraphEdge:
+    """An edge in the knowledge graph."""
 
-    A context block is the final output of the retrieval system,
-    containing formatted facts and conflict warnings ready to be
-    injected into an LLM's system prompt.
-    """
+    id: str
+    source: str
+    relation: str
+    target: str
+    confidence: float
+    created_at: str
+    superseded_at: str | None = None
+    memory_id: str = ""
 
-    formatted_text: str  # Formatted text ready for LLM injection
-    fact_count: int  # Number of facts included
-    has_conflicts: bool  # Whether any conflicts are present
-    assembled_at: datetime  # UTC timestamp of assembly
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "source": self.source,
+            "relation": self.relation,
+            "target": self.target,
+            "confidence": self.confidence,
+            "created_at": self.created_at,
+            "superseded_at": self.superseded_at,
+            "memory_id": self.memory_id,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> GraphEdge:
+        return cls(
+            id=d["id"],
+            source=d["source"],
+            relation=d["relation"],
+            target=d["target"],
+            confidence=d["confidence"],
+            created_at=d["created_at"],
+            superseded_at=d.get("superseded_at"),
+            memory_id=d.get("memory_id", ""),
+        )
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
