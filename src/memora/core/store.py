@@ -1,16 +1,16 @@
-"""Content-addressable object store for Memora v3.0.
+"""Content-addressable object store for Memora v3.1.
 
 Stores Memory objects using Git-style content-addressable storage with
-zlib compression, SHA-256 hashing, and LRU caching.
+zlib compression, SHA-256 hashing, and file-based cache invalidation.
 """
 
 from __future__ import annotations
 
-import functools
 import json
 import os
 import secrets
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,11 @@ class ObjectStore:
         self.objects_path = store_path / "objects"
         self.lock_path = store_path / ".write_lock"
         self._lock = FileLock(str(self.lock_path), timeout=30)
+
+        # File-based cache for process isolation (replaces functools.lru_cache)
+        self._cache: dict[str, Memory] = {}
+        self._cache_max = 1000
+        self._invalidation_file = store_path / "index" / "cache_invalidations.json"
 
     def _object_path_from_hash(self, obj_hash: str) -> Path:
         return self.objects_path / obj_hash[:2] / obj_hash[2:]
@@ -119,13 +124,56 @@ class ObjectStore:
         os.replace(str(tmp_path), str(final_path))
         return obj_hash
 
-    @functools.lru_cache(maxsize=1000)
     def read_memory(self, obj_hash: str) -> Memory:
+        """Read memory with file-based cache invalidation for process isolation."""
+        # Check if this memory was invalidated by another process
+        if self._is_invalidated(obj_hash):
+            self._cache.pop(obj_hash, None)
+
+        # Return from cache if available
+        if obj_hash in self._cache:
+            return self._cache[obj_hash]
+
+        # Read from disk
         path = self._object_path_from_hash(obj_hash)
         if not path.exists():
             raise ObjectNotFoundError(f"Memory not found: {obj_hash[:8]}...")
         data = path.read_bytes()
-        return self._deserialize_memory(data, obj_hash)
+        memory = self._deserialize_memory(data, obj_hash)
+
+        # Cache with LRU eviction
+        if len(self._cache) >= self._cache_max:
+            # Evict oldest entry (first item in dict)
+            oldest_key = next(iter(self._cache))
+            del self._cache[oldest_key]
+        self._cache[obj_hash] = memory
+        return memory
+
+    def invalidate(self, obj_hash: str) -> None:
+        """Invalidate cache entry. Called by forget_memory(). Writes to shared invalidation file."""
+        self._cache.pop(obj_hash, None)
+        invalidations = self._load_invalidations()
+        invalidations[obj_hash] = datetime.now().isoformat()
+        self._save_invalidations(invalidations)
+
+    def _is_invalidated(self, obj_hash: str) -> bool:
+        """Check if obj_hash was invalidated by another process."""
+        invalidations = self._load_invalidations()
+        return obj_hash in invalidations
+
+    def _load_invalidations(self) -> dict[str, str]:
+        """Load cache invalidations from shared file."""
+        if not self._invalidation_file.exists():
+            return {}
+        try:
+            return json.loads(self._invalidation_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _save_invalidations(self, invalidations: dict[str, str]) -> None:
+        """Save cache invalidations to shared file."""
+        self._invalidation_file.parent.mkdir(parents=True, exist_ok=True)
+        self._invalidation_file.write_text(json.dumps(invalidations, indent=2))
 
     def read_tree(self, obj_hash: str) -> MemoryTree:
         path = self._object_path_from_hash(obj_hash)
@@ -214,12 +262,21 @@ class ObjectStore:
         config_file = store_path / "config"
         if not config_file.exists():
             config = {
-                "core": {"version": "3.0", "created_at": secrets.token_hex(8)},
+                "core": {"version": "3.1", "created_at": secrets.token_hex(8)},
                 "proxy": {
                     "listen_port": 11435,
-                    "target_port": 11434,
-                    "session_timeout_minutes": 5,
+                    "target_port": 11434,  # Legacy support - use ollama_targets instead
+                    "session_timeout_minutes": 15,
                     "auto_commit": True,
+                },
+                "ollama_targets": {
+                    "primary": {
+                        "host": "localhost",
+                        "port": 11434,
+                        "priority": 1,
+                        "enabled": True,
+                        "name": "Primary Ollama",
+                    }
                 },
                 "branches": {
                     "session_limit": 100,
@@ -238,6 +295,12 @@ class ObjectStore:
                     "enable_temporal_index": True,
                     "enable_session_index": True,
                     "lru_cache_size": 1000,
+                    "word_index_archive_days": 365,
+                    "lazy_load_threshold_mb": 1,
+                },
+                "sessions": {
+                    "keep_closed_days": 30,
+                    "archive_enabled": True,
                 },
                 "dashboard": {
                     "default_memories_per_page": 50,

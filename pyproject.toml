@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "memora"
-version = "3.0.0"
+version = "3.1.0"
 description = "Git-style versioned memory for any LLM"
 authors = ["memora-ai"]
 license = "Apache-2.0"
@@ -23,6 +23,7 @@ chardet = "^5.0"
 markdown = "^3.5"
 pypdf2 = "^3.0"
 click = ">=8.0.0,<8.2.0"
+python-dateutil = "^2.9.0.post0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"

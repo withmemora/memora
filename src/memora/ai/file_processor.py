@@ -41,7 +41,7 @@ class FileProcessor:
             raise ValueError(f"Unsupported file type: {suffix}")
 
         file_type = suffix.lstrip(".")
-        memories, _ = extract_memories(
+        memories, _, _ = extract_memories(
             text,
             source=f"{source_prefix}:{path.name}",
             filename=path.name,

@@ -1,50 +1,89 @@
-"""Knowledge graph for Memora v3.0.
+"""Knowledge graph for Memora v3.1.
 
 Append-only graph with nodes and edges. NER output feeds into this, not the memory store.
 Conflicting edges get a superseded_at field.
+Includes cross-platform file locking for concurrent access safety.
 """
 
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Optional
 
+from memora.core.platform_utils import PlatformUtils, safe_write_file, safe_read_file
 from memora.shared.models import GraphNode, GraphEdge, now_iso
 
 
 class KnowledgeGraph:
-    """Append-only knowledge graph stored as JSON files."""
+    """Append-only knowledge graph stored as JSON files with cross-platform locking."""
 
     def __init__(self, store_path: Path):
-        self.store_path = store_path
-        self.graph_path = store_path / "graph"
+        self.store_path = PlatformUtils.normalize_path(store_path)
+        self.graph_path = self.store_path / "graph"
         self.nodes_file = self.graph_path / "nodes.json"
         self.edges_file = self.graph_path / "edges.json"
+        self.nodes_lock = self.graph_path / "nodes.lock"
+        self.edges_lock = self.graph_path / "edges.lock"
 
     def _load_nodes(self) -> list[dict]:
-        if not self.nodes_file.exists():
-            return []
+        """Load nodes with cross-platform file locking."""
         try:
-            return json.loads(self.nodes_file.read_text())
-        except Exception:
-            return []
+            with PlatformUtils.file_lock(self.nodes_lock):
+                if not self.nodes_file.exists():
+                    return []
+                try:
+                    return json.loads(safe_read_file(self.nodes_file))
+                except Exception:
+                    return []
+        except OSError:
+            # Fallback without locking if lock fails
+            if not self.nodes_file.exists():
+                return []
+            try:
+                return json.loads(safe_read_file(self.nodes_file))
+            except Exception:
+                return []
 
     def _save_nodes(self, nodes: list[dict]) -> None:
-        self.graph_path.mkdir(parents=True, exist_ok=True)
-        self.nodes_file.write_text(json.dumps(nodes, indent=2))
+        """Save nodes with cross-platform file locking."""
+        PlatformUtils.create_directories_safe(self.graph_path)
+        try:
+            with PlatformUtils.file_lock(self.nodes_lock):
+                safe_write_file(self.nodes_file, json.dumps(nodes, indent=2))
+        except OSError:
+            # Fallback without locking if lock fails
+            safe_write_file(self.nodes_file, json.dumps(nodes, indent=2))
 
     def _load_edges(self) -> list[dict]:
-        if not self.edges_file.exists():
-            return []
+        """Load edges with cross-platform file locking."""
         try:
-            return json.loads(self.edges_file.read_text())
-        except Exception:
-            return []
+            with PlatformUtils.file_lock(self.edges_lock):
+                if not self.edges_file.exists():
+                    return []
+                try:
+                    return json.loads(safe_read_file(self.edges_file))
+                except Exception:
+                    return []
+        except OSError:
+            # Fallback without locking if lock fails
+            if not self.edges_file.exists():
+                return []
+            try:
+                return json.loads(safe_read_file(self.edges_file))
+            except Exception:
+                return []
 
     def _save_edges(self, edges: list[dict]) -> None:
-        self.graph_path.mkdir(parents=True, exist_ok=True)
-        self.edges_file.write_text(json.dumps(edges, indent=2))
+        """Save edges with cross-platform file locking."""
+        PlatformUtils.create_directories_safe(self.graph_path)
+        try:
+            with PlatformUtils.file_lock(self.edges_lock):
+                safe_write_file(self.edges_file, json.dumps(edges, indent=2))
+        except OSError:
+            # Fallback without locking if lock fails
+            safe_write_file(self.edges_file, json.dumps(edges, indent=2))
 
     def add_node(self, name: str, node_type: str, memory_id: str = "") -> str:
         """Add or update a node. Returns node ID."""
@@ -149,8 +188,15 @@ class KnowledgeGraph:
             return [n for n in nodes if n["type"] == node_type]
         return nodes
 
-    def build_profile(self) -> dict:
-        """Assemble a user profile from the graph."""
+    def build_profile(self, memory_fallback: list = None) -> dict:
+        """Assemble a user profile from the graph with memory content fallback.
+
+        Args:
+            memory_fallback: List of Memory objects to scan if graph is empty
+
+        Returns:
+            Dict with profile sections: works_at, languages, tools, knows, building, considering
+        """
         nodes = self._load_nodes()
         edges = self._load_edges()
         active_edges = [e for e in edges if e.get("superseded_at") is None]
@@ -192,6 +238,77 @@ class KnowledgeGraph:
                 ]
                 if lang_edges:
                     profile["languages"].append(node["name"])
+
+        # FALLBACK: If profile is mostly empty, scan memory content
+        if memory_fallback and self._is_profile_empty(profile):
+            profile = self._build_profile_from_memories(profile, memory_fallback)
+
+        return profile
+
+    def _is_profile_empty(self, profile: dict) -> bool:
+        """Check if profile has minimal useful information."""
+        total_items = sum(len(items) for items in profile.values())
+        return total_items < 3  # Less than 3 total profile items
+
+    def _build_profile_from_memories(self, profile: dict, memories: list) -> dict:
+        """Fallback: Build profile from memory content when graph is insufficient."""
+        import re
+
+        for memory in memories[-50:]:  # Check last 50 memories for efficiency
+            content = memory.content.lower()
+
+            # Work patterns
+            work_patterns = [
+                r"works at ([\w\s]+)",
+                r"work at ([\w\s]+)",
+                r"employed at ([\w\s]+)",
+                r"job at ([\w\s]+)",
+            ]
+            for pattern in work_patterns:
+                match = re.search(pattern, content)
+                if match:
+                    company = match.group(1).strip().title()
+                    if company not in profile["works_at"]:
+                        profile["works_at"].append(company)
+
+            # Language patterns
+            lang_patterns = [
+                r"uses? (python|javascript|java|rust|go|c\+\+|c#|php|ruby|swift|kotlin)",
+                r"prefers? (python|javascript|java|rust|go|c\+\+|c#|php|ruby|swift|kotlin)",
+                r"codes? in (python|javascript|java|rust|go|c\+\+|c#|php|ruby|swift|kotlin)",
+            ]
+            for pattern in lang_patterns:
+                match = re.search(pattern, content)
+                if match:
+                    lang = match.group(1).title()
+                    if lang not in profile["languages"]:
+                        profile["languages"].append(lang)
+
+            # Tool patterns
+            tool_patterns = [
+                r"uses? (vscode|vim|emacs|intellij|pycharm|tabs|spaces|black|prettier)",
+                r"prefers? (vscode|vim|emacs|intellij|pycharm|tabs|spaces|black|prettier)",
+            ]
+            for pattern in tool_patterns:
+                match = re.search(pattern, content)
+                if match:
+                    tool = match.group(1)
+                    if tool not in profile["tools"]:
+                        profile["tools"].append(tool)
+
+            # Building patterns
+            build_patterns = [
+                r"building ([\w\s]+)",
+                r"working on ([\w\s]+)",
+                r"developing ([\w\s]+)",
+                r"creating ([\w\s]+)",
+            ]
+            for pattern in build_patterns:
+                match = re.search(pattern, content)
+                if match:
+                    project = match.group(1).strip()
+                    if project not in profile["building"]:
+                        profile["building"].append(project)
 
         return profile
 

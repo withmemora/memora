@@ -1,21 +1,44 @@
-"""New extraction pipeline for Memora v3.0.
+"""New extraction pipeline for Memora v3.1.
 
 Pipeline:
-  Text -> Type Detector -> Type-Specific Extractor -> Memory String -> Graph Updater -> Index Updater -> Store
+  Text -> Security Filter -> Type Detector -> Type-Specific Extractor -> Memory String -> Graph Updater -> Index Updater -> Store
 """
 
 from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-
-import spacy
+import logging
+import warnings
 
 from memora.core.extractors.code import extract_code_memories
 from memora.core.extractors.conversation import extract_conversation_memories
 from memora.core.extractors.document import extract_document_memory, extract_file_memory
 from memora.core.type_detector import MemoryType, detect_type
+from memora.core.security_filter import filter_sensitive_content, scan_for_sensitive_content
 from memora.shared.models import Memory, now_iso
+
+logger = logging.getLogger(__name__)
+
+
+def load_nlp():
+    """Load spaCy model with graceful degradation."""
+    try:
+        import spacy
+
+        return spacy.load("en_core_web_sm")
+    except OSError:
+        # spaCy installed but model not downloaded
+        warnings.warn(
+            "spaCy model 'en_core_web_sm' not found. "
+            "NER disabled — graph will not be populated. "
+            "Pattern extraction still works. "
+            "Run: python -m spacy download en_core_web_sm"
+        )
+        return None
+    except ImportError:
+        warnings.warn("spaCy not installed. NER disabled.")
+        return None
 
 
 def extract_memories(
@@ -24,20 +47,35 @@ def extract_memories(
     session_id: str = "",
     branch: str = "main",
     turn_index: int = 0,
-    raw_turn: str = "",
-    llm_response_summary: str = "",
-    filename: str = "",
-    file_type: str = "",
     nlp_model: str = "en_core_web_sm",
-) -> tuple[list[Memory], list[dict]]:
-    """Extract memories from text using the new pipeline.
+    filename: str | None = None,
+    file_type: str | None = None,
+    raw_turn: str | None = None,
+    llm_response_summary: str | None = None,
+    skip_security_filter: bool = False,
+) -> tuple[list[Memory], list[dict], list[str]]:
+    """Extract memories from text.
 
     Returns:
-        Tuple of (memories, ner_entities_for_graph)
+        Tuple of (memories, ner_entities_for_graph, security_warnings)
     """
     text = text.strip()
     if not text:
-        return [], []
+        return [], [], []
+
+    # SECURITY FILTER - Critical first step
+    security_warnings = []
+    if not skip_security_filter:
+        has_sensitive, detected_types = scan_for_sensitive_content(text)
+        if has_sensitive:
+            filtered_text, redacted_types = filter_sensitive_content(text)
+            security_warnings = [f"Filtered {', '.join(redacted_types)} from content"]
+            logger.warning(f"Sensitive content filtered: {redacted_types}")
+            text = filtered_text
+
+            # Also filter raw_turn if provided
+            if raw_turn:
+                raw_turn, _ = filter_sensitive_content(raw_turn)
 
     memory_type = detect_type(text, source)
 
@@ -56,9 +94,11 @@ def extract_memories(
             text, source, session_id, branch, turn_index, raw_turn or text, llm_response_summary
         )
 
-    ner_entities = _extract_ner_for_graph(text, nlp_model)
+    # Use graceful NLP loading for NER
+    nlp = load_nlp()
+    ner_entities = _extract_ner_for_graph(text, nlp)
 
-    return memories, ner_entities
+    return memories, ner_entities, security_warnings
 
 
 def _extract_code(
@@ -80,11 +120,10 @@ def _remove_code_blocks(text: str) -> str:
     return re.sub(r"```[\s\S]*?```", "", text)
 
 
-def _extract_ner_for_graph(text: str, nlp_model: str) -> list[dict]:
+def _extract_ner_for_graph(text: str, nlp) -> list[dict]:
     """Run spaCy NER and return entities for graph building (NOT as memories)."""
-    try:
-        nlp = spacy.load(nlp_model)
-    except OSError:
+    if nlp is None:
+        # spaCy not available, return empty list
         return []
 
     doc = nlp(text)
@@ -117,10 +156,16 @@ def normalize_text(text: str) -> list[str]:
     text = text.strip()
     if not text:
         return []
-    try:
-        nlp = spacy.load("en_core_web_sm")
-    except OSError:
-        return [s.strip() for s in re.split(r"[.!?]+", text) if s.strip()]
 
+    # Use graceful loading for spaCy
+    nlp = load_nlp()
+    if nlp is None:
+        # Fallback: simple sentence splitting
+        import re
+
+        sentences = re.split(r"[.!?]+", text)
+        return [s.strip() for s in sentences if s.strip()]
+
+    # Use spaCy for proper sentence segmentation
     doc = nlp(text)
     return [sent.text.strip() for sent in doc.sents if sent.text.strip()]

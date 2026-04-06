@@ -68,6 +68,9 @@ class Memory:
     supersedes: str | None = None
     entities: list[str] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
+    # New fields for memory management
+    pinned: bool = False  # Always inject into LLM context regardless of recency
+    hidden: bool = False  # Keep in store but don't inject into LLM context
 
     @staticmethod
     def generate_id() -> str:
@@ -88,6 +91,8 @@ class Memory:
             "supersedes": self.supersedes,
             "entities": self.entities,
             "metadata": self.metadata,
+            "pinned": self.pinned,
+            "hidden": self.hidden,
         }
 
     @classmethod
@@ -106,6 +111,8 @@ class Memory:
             supersedes=d.get("supersedes"),
             entities=d.get("entities", []),
             metadata=d.get("metadata", {}),
+            pinned=d.get("pinned", False),
+            hidden=d.get("hidden", False),
         )
 
     def compute_hash(self) -> str:

@@ -202,7 +202,7 @@ class OllamaProxy:
             branch = session.branch if session else "main"
 
             if user_message:
-                memories, ner_entities = extract_memories(
+                memories, ner_entities, _ = extract_memories(
                     user_message,
                     source=f"ollama_chat",
                     session_id=session_id,
@@ -229,7 +229,7 @@ class OllamaProxy:
                     logger.info(f"Captured {len(memories)} memories from user")
 
             if ai_response:
-                memories, ner_entities = extract_memories(
+                memories, ner_entities, _ = extract_memories(
                     ai_response,
                     source=f"ollama_chat",
                     session_id=session_id,

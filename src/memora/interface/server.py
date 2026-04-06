@@ -197,6 +197,48 @@ async def forget_memory(memory_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to delete memory: {str(e)}")
 
 
+@app.post("/memories/{memory_id}/pin")
+async def toggle_pin_memory(memory_id: str):
+    """Toggle pin status of a memory."""
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        success, new_state = memory_engine.toggle_pin_memory(memory_id)
+        if success:
+            await notify_websocket_clients(
+                {
+                    "type": "memory_pinned" if new_state else "memory_unpinned",
+                    "memory_id": memory_id,
+                }
+            )
+            return {"success": True, "pinned": new_state}
+        raise HTTPException(status_code=404, detail="Memory not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle pin: {str(e)}")
+
+
+@app.post("/memories/{memory_id}/hide")
+async def toggle_hide_memory(memory_id: str):
+    """Toggle hide status of a memory (hide from LLM context)."""
+    if not memory_engine:
+        raise HTTPException(status_code=500, detail="Engine not initialized")
+    try:
+        success, new_state = memory_engine.toggle_hide_memory(memory_id)
+        if success:
+            await notify_websocket_clients(
+                {"type": "memory_hidden" if new_state else "memory_shown", "memory_id": memory_id}
+            )
+            return {"success": True, "hidden": new_state}
+        raise HTTPException(status_code=404, detail="Memory not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to toggle hide: {str(e)}")
+
+
+@app.get("/memories/{memory_id}")
 async def get_memory(memory_id: str):
     if not memory_engine:
         raise HTTPException(status_code=500, detail="Engine not initialized")
@@ -438,14 +480,35 @@ async def get_conflicts():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for real-time updates.
+
+    Sends notifications for:
+    - Session start/end with memory counts
+    - Memory operations (add, delete, pin, hide)
+    - Graph updates
+    - Branch changes
+    - Conflicts detected
+    """
     await websocket.accept()
     websocket_connections.append(websocket)
+
+    # Send initial connection confirmation
+    await websocket.send_json(
+        {
+            "type": "connected",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message": "WebSocket connected - real-time updates enabled",
+        }
+    )
+
     try:
         while True:
-            await websocket.receive_text()
-            await websocket.send_json(
-                {"type": "heartbeat", "timestamp": datetime.now(timezone.utc).isoformat()}
-            )
+            # Wait for client ping to maintain connection
+            message = await websocket.receive_text()
+            if message == "ping":
+                await websocket.send_json(
+                    {"type": "pong", "timestamp": datetime.now(timezone.utc).isoformat()}
+                )
     except WebSocketDisconnect:
         if websocket in websocket_connections:
             websocket_connections.remove(websocket)

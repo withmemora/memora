@@ -46,10 +46,46 @@
 
         .memory-timeline { display: flex; flex-direction: column; gap: 0; max-height: 350px; overflow-y: auto; }
         .session-header { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; padding: 10px 0 6px; border-bottom: 1px solid #333; }
-        .memory-item { padding: 8px 0; border-bottom: 1px solid #222; }
+        .memory-item { padding: 8px 0; border-bottom: 1px solid #222; position: relative; }
         .memory-item:last-child { border-bottom: none; }
-        .memory-content { font-size: 13px; }
+        .memory-item:hover .memory-controls { opacity: 1; }
+        .memory-content { font-size: 13px; margin-right: 80px; }
         .memory-meta { font-size: 10px; opacity: 0.4; margin-top: 3px; letter-spacing: 0.05em; }
+        
+        /* Memory controls */
+        .memory-controls { 
+            position: absolute; 
+            top: 8px; 
+            right: 0; 
+            opacity: 0; 
+            transition: opacity 0.2s; 
+            display: flex; 
+            gap: 4px; 
+        }
+        .memory-btn { 
+            padding: 2px 8px; 
+            border: 1px solid #666; 
+            background: #000; 
+            color: #666; 
+            cursor: pointer; 
+            font-size: 9px; 
+            font-family: inherit; 
+            letter-spacing: 0.05em; 
+            text-transform: uppercase; 
+            transition: all 0.1s; 
+        }
+        .memory-btn:hover { background: #666; color: #000; }
+        .memory-btn.delete:hover { background: #f44; color: #fff; border-color: #f44; }
+        .memory-btn.pin:hover { background: #4a4; color: #fff; border-color: #4a4; }
+        .memory-btn.hide:hover { background: #fa4; color: #000; border-color: #fa4; }
+        .memory-item.pinned::before { 
+            content: '📌'; 
+            position: absolute; 
+            left: -15px; 
+            top: 8px; 
+            font-size: 10px; 
+        }
+        .memory-item.hidden { opacity: 0.3; }
 
         .branch-bar { width: 100%; height: 4px; background: #222; margin: 8px 0; }
         .branch-fill { height: 100%; background: #fff; transition: width 0.3s; }
@@ -171,7 +207,19 @@
                 memories.slice(0, 30).forEach(m => {
                     const date = m.created_at?.slice(0, 10) || '';
                     if (date !== currentDate) { html += `<div class="session-header">${date}</div>`; currentDate = date; }
-                    html += `<div class="memory-item"><div class="memory-content">${esc(m.content)}</div><div class="memory-meta">${m.confidence ? m.confidence.toFixed(2) + '  ' : ''}${m.source || ''}</div></div>`;
+                    
+                    const pinnedClass = m.pinned ? ' pinned' : '';
+                    const hiddenClass = m.hidden ? ' hidden' : '';
+                    
+                    html += `<div class="memory-item${pinnedClass}${hiddenClass}" data-memory-id="${m.id}">`;
+                    html += `<div class="memory-content">${esc(m.content)}</div>`;
+                    html += `<div class="memory-meta">${m.confidence ? m.confidence.toFixed(2) + '  ' : ''}${m.source || ''}</div>`;
+                    html += `<div class="memory-controls">`;
+                    html += `<button class="memory-btn pin" onclick="togglePin('${m.id}')" title="Pin/Unpin memory">${m.pinned ? 'UNPIN' : 'PIN'}</button>`;
+                    html += `<button class="memory-btn hide" onclick="toggleHide('${m.id}')" title="Hide/Show from LLM">${m.hidden ? 'SHOW' : 'HIDE'}</button>`;
+                    html += `<button class="memory-btn delete" onclick="deleteMemory('${m.id}')" title="Delete memory">DELETE</button>`;
+                    html += `</div>`;
+                    html += `</div>`;
                 });
                 html += '</div>';
                 document.getElementById('timeline-content').innerHTML = html;
@@ -229,6 +277,46 @@
                 a.download = `memora-export.${format === 'json' ? 'json' : 'md'}`;
                 a.click();
             } catch(e) { alert('Export failed: ' + e.message); }
+        }
+
+        // Memory control functions
+        async function deleteMemory(memoryId) {
+            if (!confirm('Delete this memory permanently? This cannot be undone.')) return;
+            try {
+                const response = await fetch(`${API}/memories/${memoryId}`, { method: 'DELETE' });
+                if (response.ok) {
+                    // Remove from UI
+                    const item = document.querySelector(`[data-memory-id="${memoryId}"]`);
+                    if (item) item.remove();
+                    // Refresh stats
+                    await loadStats();
+                } else {
+                    throw new Error(`Delete failed: ${response.status}`);
+                }
+            } catch(e) { alert('Delete failed: ' + e.message); }
+        }
+
+        async function togglePin(memoryId) {
+            try {
+                const response = await fetch(`${API}/memories/${memoryId}/pin`, { method: 'POST' });
+                if (response.ok) {
+                    await loadTimeline();  // Refresh to show updated state
+                } else {
+                    throw new Error(`Pin toggle failed: ${response.status}`);
+                }
+            } catch(e) { alert('Pin toggle failed: ' + e.message); }
+        }
+
+        async function toggleHide(memoryId) {
+            try {
+                const response = await fetch(`${API}/memories/${memoryId}/hide`, { method: 'POST' });
+                if (response.ok) {
+                    await loadTimeline();  // Refresh to show updated state
+                } else {
+                    throw new Error(`Hide toggle failed: ${response.status}`);
+                }
+            } catch(e) { alert('Hide toggle failed: ' + e.message); }
+        }
         }
 
         function showPanel(panel) {

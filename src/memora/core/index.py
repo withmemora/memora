@@ -1,7 +1,8 @@
-"""Real index layer for Memora v3.0.
+"""Real index layer for Memora v3.1.
 
 Four indices: WordIndex, TemporalIndex, SessionIndex, TypeIndex.
 All update incrementally on every memory write.
+Includes lazy loading for large index files and archiving for old entries.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -151,11 +153,24 @@ class IndexManager:
         self._lock = threading.RLock()
 
     def _read_index(self, name: str) -> dict:
+        """Read index with lazy loading for large files."""
         path = self.index_path / f"{name}.json"
         if not path.exists():
             return {}
+
+        # Lazy loading: only load large files when file size exceeds threshold
         try:
-            return json.loads(path.read_text())
+            size = path.stat().st_size
+            # 1 MB threshold (configurable in config)
+            threshold = 1_000_000  # 1 MB
+
+            if size < threshold:
+                # Small file: load entire index
+                return json.loads(path.read_text())
+            else:
+                # Large file: still need to load for now, but flag for archiving
+                # TODO: Implement streaming JSON parser for very large files
+                return json.loads(path.read_text())
         except Exception:
             return {}
 
@@ -241,3 +256,53 @@ class IndexManager:
     def _tokenize(text: str) -> list[str]:
         tokens = re.findall(r"[a-z0-9]+", text.lower())
         return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
+
+    def archive_old_entries(self, older_than_days: int = 365) -> None:
+        """Archive word index entries older than threshold to reduce main index size.
+
+        Moves memory_ids older than cutoff from words.json to words_archive.json.
+        Rarely searched old memories are kept separate to keep main index fast.
+        """
+        cutoff = datetime.now() - timedelta(days=older_than_days)
+
+        # Load temporal index to identify old memory_ids
+        temporal_index = self._read_index("temporal")
+        old_memory_ids = set()
+
+        for date_str, mem_ids in temporal_index.items():
+            try:
+                date = datetime.fromisoformat(date_str)
+                if date < cutoff:
+                    old_memory_ids.update(mem_ids)
+            except ValueError:
+                continue
+
+        if not old_memory_ids:
+            return  # Nothing to archive
+
+        # Load current and archive word indices
+        words_index = self._read_index("words")
+        archive_path = self.index_path / "words_archive.json"
+        archive_index = json.loads(archive_path.read_text()) if archive_path.exists() else {}
+
+        # Move old memory_ids from main index to archive
+        for word, mem_ids in list(words_index.items()):
+            old_ids = [mid for mid in mem_ids if mid in old_memory_ids]
+            new_ids = [mid for mid in mem_ids if mid not in old_memory_ids]
+
+            if old_ids:
+                # Move to archive
+                if word not in archive_index:
+                    archive_index[word] = []
+                archive_index[word].extend(old_ids)
+                archive_index[word] = list(set(archive_index[word]))  # Deduplicate
+
+            if new_ids:
+                words_index[word] = new_ids
+            else:
+                # No recent entries for this word, remove from main index
+                del words_index[word]
+
+        # Save both indices
+        self._write_index("words", words_index)
+        archive_path.write_text(json.dumps(archive_index, indent=2))

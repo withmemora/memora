@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import List, Optional, Dict
 
 from memora.core.engine import CoreEngine
@@ -49,7 +50,7 @@ class MemoraChat:
         session_id = session.id if session else ""
         branch = session.branch if session else self.branch
 
-        memories, ner_entities = extract_memories(
+        memories, ner_entities, _ = extract_memories(
             user_message,
             source="ollama_chat",
             session_id=session_id,
@@ -84,7 +85,7 @@ class MemoraChat:
             self.conversation_history.append({"role": "user", "content": user_message})
             self.conversation_history.append({"role": "assistant", "content": response})
 
-            ai_memories, ai_ner = extract_memories(
+            ai_memories, ai_ner, _ = extract_memories(
                 response,
                 source="ollama_chat",
                 session_id=session_id,

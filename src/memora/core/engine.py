@@ -1,4 +1,4 @@
-"""Core engine for Memora v3.0.
+"""Core engine for Memora v3.1.
 
 Orchestrates Memory objects, Session lifecycle, auto-commit, indices, graph, and branches.
 """
@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+import hashlib
+from datetime import datetime
 
 from memora.core.branch_manager import BranchManager
 from memora.core.conflicts import (
@@ -52,6 +54,7 @@ class CoreEngine:
         self._index_manager: IndexManager | None = None
         self._graph: KnowledgeGraph | None = None
         self._branch_manager: BranchManager | None = None
+        self._dedup_index: dict[str, str] = {}  # content_hash -> memory_id
 
     def _ensure(self) -> tuple[Path, ObjectStore]:
         if self._object_store is None or self._store_path is None:
@@ -59,6 +62,62 @@ class CoreEngine:
                 "No store is open. Call init_store() or open_store() first."
             )
         return self._store_path, self._object_store
+
+    def _content_hash(self, content: str) -> str:
+        """Hash of normalized content only — for deduplication."""
+        normalized = content.lower().strip()
+        return hashlib.sha256(normalized.encode()).hexdigest()[:16]
+
+    def _load_dedup_index(self) -> None:
+        """Load content hash index from disk."""
+        if not self._store_path:
+            return
+
+        dedup_file = self._store_path / "index" / "content_hashes.json"
+        if dedup_file.exists():
+            try:
+                with open(dedup_file, "r") as f:
+                    self._dedup_index = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                self._dedup_index = {}
+        else:
+            self._dedup_index = {}
+
+    def _save_dedup_index(self) -> None:
+        """Save content hash index to disk."""
+        if not self._store_path:
+            return
+
+        index_dir = self._store_path / "index"
+        index_dir.mkdir(exist_ok=True)
+        dedup_file = index_dir / "content_hashes.json"
+
+        try:
+            with open(dedup_file, "w") as f:
+                json.dump(self._dedup_index, f)
+        except IOError:
+            pass  # Fail silently - deduplication is an optimization
+
+    def _is_duplicate(self, content: str) -> str | None:
+        """Check if content is duplicate. Returns existing memory_id if duplicate."""
+        chash = self._content_hash(content)
+        existing_memory_id = self._dedup_index.get(chash)
+
+        if existing_memory_id and self._object_store:
+            # Verify the memory still exists
+            try:
+                existing_memory = self._object_store.read_memory(existing_memory_id)
+                if existing_memory:
+                    # Update the memory's timestamp to show it was referenced again
+                    existing_memory.created_at = datetime.now().isoformat()
+                    self._object_store.write(existing_memory)
+                    return existing_memory_id
+            except ObjectNotFoundError:
+                # Memory was deleted, remove from dedup index
+                del self._dedup_index[chash]
+                self._save_dedup_index()
+
+        return None
 
     # ==================== Store Lifecycle ====================
 
@@ -73,6 +132,7 @@ class CoreEngine:
         self._index_manager = IndexManager(store_path)
         self._graph = KnowledgeGraph(store_path)
         self._branch_manager = BranchManager(store_path)
+        self._load_dedup_index()
         logger.info(f"Initialized new Memora store at {store_path}")
 
     def open_store(self, path: Path) -> None:
@@ -85,6 +145,7 @@ class CoreEngine:
         self._index_manager = IndexManager(store_path)
         self._graph = KnowledgeGraph(store_path)
         self._branch_manager = BranchManager(store_path)
+        self._load_dedup_index()
         logger.info(f"Opened Memora store at {store_path}")
 
     # ==================== Ingestion ====================
@@ -104,7 +165,7 @@ class CoreEngine:
             session = session_mgr.open_session(branch)
             session_id = session.id
 
-        memories, ner_entities = extract_memories(
+        memories, ner_entities, security_warnings = extract_memories(
             text,
             source=source,
             session_id=session_id,
@@ -113,8 +174,26 @@ class CoreEngine:
 
         result = []
         for memory in memories:
+            # Check for duplicate content
+            existing_id = self._is_duplicate(memory.content)
+            if existing_id:
+                # Duplicate found - use existing memory
+                logger.info(
+                    f"Duplicate content detected, referencing existing memory: {existing_id}"
+                )
+                if session_mgr and session_id:
+                    session_mgr.add_memory_to_session(session_id, existing_id)
+                result.append((existing_id, memory))
+                continue
+
+            # Store new memory
             mem_hash = store.write(memory)
             result.append((mem_hash, memory))
+
+            # Add to deduplication index
+            content_hash = self._content_hash(memory.content)
+            self._dedup_index[content_hash] = memory.id
+            self._save_dedup_index()
 
             if session_mgr and session_id:
                 session_mgr.add_memory_to_session(session_id, memory.id)
@@ -159,7 +238,7 @@ class CoreEngine:
         except Exception:
             full_text = " ".join([f.content for f in facts])
 
-        memories, ner_entities = extract_memories(
+        memories, ner_entities, security_warnings = extract_memories(
             full_text,
             source=source,
             session_id=session_id,
@@ -339,8 +418,110 @@ class CoreEngine:
         # Clear LRU cache for this hash
         store.read_memory.cache_clear()
 
+        # Remove from deduplication index
+        # First, get the memory content to find the hash
+        try:
+            memory = store.read_memory(target_hash)
+            content_hash = self._content_hash(memory.content)
+            if content_hash in self._dedup_index and self._dedup_index[content_hash] == memory_id:
+                del self._dedup_index[content_hash]
+                self._save_dedup_index()
+        except Exception:
+            # Memory already deleted, just clean up any stale entries
+            stale_entries = [h for h, mid in self._dedup_index.items() if mid == memory_id]
+            for h in stale_entries:
+                del self._dedup_index[h]
+            if stale_entries:
+                self._save_dedup_index()
+
         logger.info(f"Forgot memory {memory_id}")
         return True
+
+    def toggle_pin_memory(self, memory_id: str) -> tuple[bool, bool]:
+        """Toggle pin status of a memory.
+
+        Pinned memories are always included in LLM context regardless of recency.
+
+        Returns: (success, new_pin_state)
+        """
+        store_path, store = self._ensure()
+
+        # Find the memory object
+        target_hash = None
+        all_hashes = store.list_all_hashes()
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                if memory.id == memory_id:
+                    target_hash = obj_hash
+                    break
+            except Exception:
+                continue
+
+        if not target_hash:
+            return False, False
+
+        # Toggle pin state and re-save
+        memory.pinned = not memory.pinned
+        memory.updated_at = now_iso()
+
+        # Re-save the memory with new pin state
+        new_hash = store.write_memory(memory)
+
+        # Delete old object if hash changed
+        if new_hash != target_hash:
+            old_obj_path = store._object_path_from_hash(target_hash)
+            if old_obj_path.exists():
+                old_obj_path.unlink()
+
+        # Clear LRU cache
+        store.read_memory.cache_clear()
+
+        logger.info(f"{'Pinned' if memory.pinned else 'Unpinned'} memory {memory_id}")
+        return True, memory.pinned
+
+    def toggle_hide_memory(self, memory_id: str) -> tuple[bool, bool]:
+        """Toggle hide status of a memory.
+
+        Hidden memories are kept in storage but excluded from LLM context.
+
+        Returns: (success, new_hidden_state)
+        """
+        store_path, store = self._ensure()
+
+        # Find the memory object
+        target_hash = None
+        all_hashes = store.list_all_hashes()
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                if memory.id == memory_id:
+                    target_hash = obj_hash
+                    break
+            except Exception:
+                continue
+
+        if not target_hash:
+            return False, False
+
+        # Toggle hidden state and re-save
+        memory.hidden = not memory.hidden
+        memory.updated_at = now_iso()
+
+        # Re-save the memory with new hidden state
+        new_hash = store.write_memory(memory)
+
+        # Delete old object if hash changed
+        if new_hash != target_hash:
+            old_obj_path = store._object_path_from_hash(target_hash)
+            if old_obj_path.exists():
+                old_obj_path.unlink()
+
+        # Clear LRU cache
+        store.read_memory.cache_clear()
+
+        logger.info(f"{'Hidden' if memory.hidden else 'Shown'} memory {memory_id}")
+        return True, memory.hidden
 
     def get_active_session(self):
         if self._session_manager:
@@ -445,8 +626,8 @@ class CoreEngine:
 
     # ==================== Search ====================
 
-    def search_memories(self, query: str) -> list[Memory]:
-        """Search memories using word index."""
+    def search_memories(self, query: str, date_range=None) -> list[Memory]:
+        """Search memories using word index with optional time filtering."""
         store_path, store = self._ensure()
 
         if self._index_manager:
@@ -458,11 +639,23 @@ class CoreEngine:
                     try:
                         memory = store.read_memory(obj_hash)
                         if memory.id in mem_ids:
+                            # Apply time filter if provided
+                            if date_range:
+                                start_date, end_date = date_range
+                                from dateutil import parser as date_parser
+
+                                try:
+                                    memory_date = date_parser.parse(memory.created_at)
+                                    if not (start_date <= memory_date <= end_date):
+                                        continue
+                                except:
+                                    continue
                             results.append(memory)
                     except Exception:
                         continue
                 return results
 
+        # Fallback: search all memories manually
         query_lower = query.lower()
         all_hashes = store.list_all_hashes()
         results = []
@@ -470,10 +663,69 @@ class CoreEngine:
             try:
                 memory = store.read_memory(obj_hash)
                 if query_lower in memory.content.lower():
+                    # Apply time filter if provided
+                    if date_range:
+                        start_date, end_date = date_range
+                        from dateutil import parser as date_parser
+
+                        try:
+                            memory_date = date_parser.parse(memory.created_at)
+                            if not (start_date <= memory_date <= end_date):
+                                continue
+                        except:
+                            continue
                     results.append(memory)
             except Exception:
                 continue
         return results
+
+    def search_memories_by_time(self, start_date, end_date, limit: int = 100) -> list[Memory]:
+        """Search memories within a specific time range."""
+        store_path, store = self._ensure()
+
+        if self._index_manager:
+            # Use temporal index if available
+            start_str = start_date.isoformat()
+            end_str = end_date.isoformat()
+            mem_ids = self._index_manager.get_temporal_range(start_str, end_str)
+            if mem_ids:
+                results = []
+                all_hashes = store.list_all_hashes()
+                count = 0
+                for obj_hash in all_hashes:
+                    if count >= limit:
+                        break
+                    try:
+                        memory = store.read_memory(obj_hash)
+                        if memory.id in mem_ids:
+                            results.append(memory)
+                            count += 1
+                    except Exception:
+                        continue
+                # Sort by date (newest first)
+                results.sort(key=lambda m: m.created_at, reverse=True)
+                return results
+
+        # Fallback: search all memories manually
+        all_hashes = store.list_all_hashes()
+        results = []
+        for obj_hash in all_hashes:
+            try:
+                memory = store.read_memory(obj_hash)
+                from dateutil import parser as date_parser
+
+                try:
+                    memory_date = date_parser.parse(memory.created_at)
+                    if start_date <= memory_date <= end_date:
+                        results.append(memory)
+                except:
+                    continue
+            except Exception:
+                continue
+
+        # Sort by date (newest first)
+        results.sort(key=lambda m: m.created_at, reverse=True)
+        return results[:limit]
 
     def get_timeline(self, start_date: str = "", end_date: str = "") -> list[Memory]:
         """Get memories in chronological order."""
