@@ -22,8 +22,23 @@ env/
 
 # Development folder and documentation
 dev/
-*.md
+
+# Documentation files (exclude development/temporary docs, keep essential ones)
+# Allow essential documentation
 !README.md
+!LICENSE.md
+!CHANGELOG.md
+!CONTRIBUTING.md
+!SECURITY.md
+!CODE_OF_CONDUCT.md
+
+# Development-only documentation and guides
+DEMO_SCRIPT.md
+MEMORA_USER_GUIDE*.md
+ARCHITECTURE_COMPREHENSIVE*.md
+MANUAL_TESTING_GUIDE.md
+USER_TESTING_SCENARIOS.md
+architecture.md
 # Testing
 .pytest_cache/
 .coverage
@@ -67,6 +82,15 @@ assets/logo-frame.png
 
 # Git automation scripts
 git_history.py
-
-# Git automation scripts
 auto_commit.py
+
+# Development and testing artifacts
+*.tmp
+*.log
+*.test
+test_*.txt
+demo_*.txt
+
+# Development configuration
+.vscode/settings.json
+.dev_config

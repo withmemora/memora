@@ -9,9 +9,10 @@ from rich.console import Console
 from rich.table import Table
 
 from memora.shared.models import MemorySource
+from memora.core.console_utils import create_safe_console, safe_print, ICONS
 
 app = typer.Typer(name="memora", help="Git-style versioned memory for LLMs")
-console = Console()
+console = create_safe_console()
 
 
 def check_port_available(port: int) -> bool:
@@ -33,9 +34,13 @@ def ensure_spacy_model():
         import spacy
 
         spacy.load("en_core_web_sm")
-        console.print("✓ spaCy language model available", style="green")
+        safe_print(console, f"{ICONS['check']} spaCy language model available", style="green")
     except OSError:
-        console.print("📦 Downloading spaCy language model (one-time, ~12MB)...", style="yellow")
+        safe_print(
+            console,
+            f"{ICONS['import']} Downloading spaCy language model (one-time, ~12MB)...",
+            style="yellow",
+        )
         try:
             import subprocess
 
@@ -44,12 +49,16 @@ def ensure_spacy_model():
                 check=True,
                 capture_output=True,
             )
-            console.print("✓ Language model downloaded", style="green")
+            safe_print(console, f"{ICONS['check']} Language model downloaded", style="green")
         except subprocess.CalledProcessError as e:
-            console.print(f"⚠ Failed to download spaCy model: {e}", style="red")
+            safe_print(
+                console, f"{ICONS['warning']} Failed to download spaCy model: {e}", style="red"
+            )
             console.print("NER functionality will be disabled", style="yellow")
     except ImportError:
-        console.print("⚠ spaCy not installed. Run: pip install spacy", style="red")
+        safe_print(
+            console, f"{ICONS['warning']} spaCy not installed. Run: pip install spacy", style="red"
+        )
         console.print("NER functionality will be disabled", style="yellow")
 
 
@@ -203,7 +212,7 @@ def start(
     storage_path = Path(memory_path)
 
     # Step 1: Initialize if needed
-    console.print("🚀 Starting Memora...", style="bold blue")
+    safe_print(console, f"{ICONS['rocket']} Starting Memora...", style="bold blue")
     storage_path.mkdir(parents=True, exist_ok=True)
 
     # Step 1.5: Check version compatibility

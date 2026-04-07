@@ -18,7 +18,7 @@ class FileProcessor:
     def __init__(self):
         self._pdf_available = False
         try:
-            import PyPDF2
+            import pypdf
 
             self._pdf_available = True
         except ImportError:
@@ -86,15 +86,15 @@ class FileProcessor:
 
     def _process_pdf_file(self, path: Path) -> str:
         if not self._pdf_available:
-            raise ValueError("PDF processing not available. Install PyPDF2: pip install pypdf2")
+            raise ValueError("PDF processing not available. Install pypdf: pip install pypdf")
 
-        import PyPDF2
+        import pypdf
 
         text_content = []
 
         try:
             with open(path, "rb") as f:
-                pdf_reader = PyPDF2.PdfReader(f)
+                pdf_reader = pypdf.PdfReader(f)
                 for page_num, page in enumerate(pdf_reader.pages):
                     page_text = page.extract_text()
                     if page_text:
