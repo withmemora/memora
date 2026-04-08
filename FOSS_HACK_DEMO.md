@@ -1,279 +1,368 @@
-# FOSS Hack Demo Guide - Memora
+# FOSS Hack Video Recording Script - Memora
 
 **Version**: 3.1.0  
-**Focus**: Git-style versioning + Automatic memory capture from Ollama conversations  
-**Time**: 10-15 minutes for full demo
+**Focus**: Automatic memory capture + Git-style versioning  
+**Duration**: 10-15 minutes  
+**Requirements**: Poetry, Python 3.11+, Ollama
 
 ---
 
-## Pre-Demo Checklist
+## BEFORE YOU START RECORDING
 
+### Clean Slate Setup
 ```bash
-# 1. Verify everything is installed and working
-python --version  # Should be 3.11+
-pip install -e .  # Install from source
-
-# 2. Clean slate for demo
+# Delete all memora data
 rm -rf memora_data/
 rm -rf test_demo/
 
-# 3. Verify debug logging is in place
-grep -l "\[PROXY\]\|\[CAPTURE\]\|\[EXTRACT\]" src/memora/ai/ollama_proxy.py  # Should find multiple
+# Verify deletion
+ls memora_data  # Should show "file not found" or similar
 ```
 
----
+### Have These Ready in Separate Terminals
 
-## Demo Flow (15 minutes)
-
-### Part 1: Automatic Memory Capture (5 min)
-**Goal**: Show that Memora captures conversations automatically in the background
-
+**Terminal 1** (Ollama Server):
 ```bash
-# Terminal 1: Start Memora with visible logging
-memora start --memory-path ./test_demo
-
-# Expected output:
-# [PROXY] Received request: api/chat
-# [PROXY] Is chat endpoint: true
-# [PROXY] Parsed request data: ['model', 'messages', 'stream']
-# ✓ Memora is running! Chat with Ollama normally...
-```
-
-```bash
-# Terminal 2: Start Ollama  
 ollama serve
-# Expected: listening on 127.0.0.1:11434
+# Should show: Listening on 127.0.0.1:11434
 ```
 
+**Terminal 2** (Memora Proxy - for auto-capture):
 ```bash
-# Terminal 3: Have a conversation
-# IMPORTANT: Restart Ollama CLI after memora start
-ollama run llama3.2:3b "My name is Alice and I work on AI systems"
-
-# Watch Terminal 1 - you'll see:
-# [PROXY] Received request: api/chat
-# [STREAM] Starting streaming request handler...
-# [STREAM] Opening connection to http://localhost:11434/api/chat...
-# [STREAM] Connected, status: 200
-# [STREAM] Received XX chunks, total XXXX bytes
-# [STREAM] Calling capture_memories...
-# [CAPTURE] Starting capture_memories...
-# [CAPTURE] Found messages in request: 1 items
-# [CAPTURE] Extracted user message: 65 chars
-# [CAPTURE] ✓ User message: My name is Alice and I work on AI systems
-# [EXTRACT] extract_conversation_memories called with 200 chars
-# [EXTRACT] Pattern matching found 1 memories
-# [CAPTURE] ✓ Stored 1 memories from user
-# [CAPTURE] Completed
+cd "Z:\Open Source\FOSS HACK 26\Memora"
+poetry run memora proxy start
+# Should show: Starting Memora proxy on port 11435...
 ```
 
+**Terminal 3** (Main Demo - where you'll run commands):
 ```bash
-# Terminal 3: Verify memories were captured
-memora stats
-# Expected: Total Memories increased by 2+ (user + AI response)
-
-memora search "Alice"
-# Expected: "User's name is Alice" appears in results
-
-memora search "AI systems"
-# Expected: Memory about working on AI systems appears
+cd "Z:\Open Source\FOSS HACK 26\Memora"
+# Stay in this terminal for the rest
 ```
 
 ---
 
-### Part 2: Git-Style Versioning (5 min)
-**Goal**: Show branches, commits, and rollback like Git
+## VIDEO SCRIPT - EXACT COMMANDS
+
+### INTRO (30 seconds)
+```
+"Hi, I'm demonstrating Memora - a Git-style memory system for AI.
+Unlike traditional memory systems, Memora automatically captures 
+conversations AND lets you version them like Git with branches, 
+commits, and rollback.
+
+Let me show you how it works."
+```
+
+---
+
+### PART 1: INITIALIZE & CAPTURE (3 minutes)
+
+**[In Terminal 3]**
+
+Initialize memora:
+```bash
+poetry run memora init
+# Output: ✓ Memora repository initialized at: memora_data
+```
+
+Check initial stats:
+```bash
+poetry run memora stats
+# Output should show:
+# Memory Count: 0
+# Commit Count: 0
+# Branch Count: 1
+# Session Count: 0
+```
+
+Start a chat session:
+```bash
+poetry run memora chat --model llama3.2:1b
+```
+
+**[When chat opens, type this]:**
+```
+My name is Alice and I work on AI systems. I'm currently building a memory system for large language models. We use Python and FastAPI for the backend.
+```
+
+**[Chat will wait for response - let it process]**
+
+Exit the chat:
+```
+exit
+```
+
+**[Back in Terminal 3, check if memories were captured]**
 
 ```bash
-# Terminal 3: Create a project-specific branch
-memora branch create "alice-project"
-memora branch switch "alice-project"
-# Now memories go to alice-project branch
+poetry run memora stats
+# Output should now show:
+# Memory Count: 2 or more
+# Commit Count: 1
+# Session Count: 1
+```
 
-# Simulate project work - add some memories
-memora ingest ./README.md
-# Or have more conversations:
-ollama run llama3.2:3b "The project uses Python and FastAPI"
-
-memora stats
-memora search "FastAPI"
+Verify the memories are searchable:
+```bash
+poetry run memora search "Alice"
+# Output: Should find "User's name is Alice"
 ```
 
 ```bash
-# Show the branching structure
-memora branch list
-# Expected output:
+poetry run memora search "FastAPI"
+# Output: Should find memory about FastAPI backend
+```
+
+**[Say to camera]:**
+"Notice - I didn't manually save anything. The memory was captured 
+automatically when the chat ended. Memora used a transparent proxy 
+to intercept the conversation."
+
+---
+
+### PART 2: GIT-STYLE BRANCHING (3 minutes)
+
+Show current branch:
+```bash
+poetry run memora branch list
+# Output:
 # Branches
-# ┌────────────────────────────────────────────┐
-# │ Name              │ Commit         │ Cur   │
-# ├────────────────────────────────────────────┤
-# │ main              │ a1b2c3d4...    │       │
-# │ alice-project     │ d4c3b2a1...    │ *     │
-# └────────────────────────────────────────────┘
+# ┌─────────────────────────┐
+# │ Name | Commit    | Current │
+# ├─────────────────────────┤
+# │ main | a1b2c3... │ *       │
+# └─────────────────────────┘
 ```
+
+Create a new branch for a project:
+```bash
+poetry run memora branch create "alice-project"
+```
+
+Switch to it:
+```bash
+poetry run memora branch switch "alice-project"
+```
+
+List branches again to show switch:
+```bash
+poetry run memora branch list
+# Now alice-project has the *
+```
+
+**[Say to camera]:**
+"Now I'm on a project-specific branch. Any new memories will go 
+to this branch, keeping it separate from main. This is like Git 
+branches but for AI memory."
+
+---
+
+### PART 3: COMMIT HISTORY (2 minutes)
+
+Show commit log:
+```bash
+poetry run memora log
+# Output shows commits with:
+# commit a1b2c3d4...
+# Author: system
+# Date: 2026-04-09T...
+#     Memory about Alice and FastAPI
+```
+
+Create another memory by chatting again:
+```bash
+poetry run memora chat --model llama3.2:1b
+```
+
+Type:
+```
+I prefer Python over Go for backend development.
+```
+
+Exit:
+```
+exit
+```
+
+Show updated log:
+```bash
+poetry run memora log --limit 5
+# Should show 2 commits now
+```
+
+---
+
+### PART 4: ROLLBACK - THE POWERFUL PART (2 minutes)
+
+**[Say to camera]:**
+"Now here's the powerful part - let's say we capture something 
+we don't want anymore. We can rollback like Git!"
+
+Add a wrong memory:
+```bash
+poetry run memora chat --model llama3.2:1b
+```
+
+Type something wrong on purpose:
+```
+We use Node.js for backend. Alice is working on Node.js systems.
+```
+
+Exit:
+```
+exit
+```
+
+Search for it:
+```bash
+poetry run memora search "Node.js"
+# Output: Found 1 memory
+```
+
+Get the log to find the commit BEFORE this mistake:
+```bash
+poetry run memora log
+# Note the commit hash from 2 commits ago
+```
+
+Rollback to the correct state:
+```bash
+poetry run memora rollback <COMMIT_HASH> --force --no-create-backup-branch
+# Replace <COMMIT_HASH> with the hash from 2 commits ago
+# Output: [OK] Rolled back to a1b2c3d4...
+```
+
+Verify the wrong memory is gone:
+```bash
+poetry run memora search "Node.js"
+# Output: No results found
+```
+
+Verify correct memories still exist:
+```bash
+poetry run memora search "Python"
+# Output: Still finds "I prefer Python over Go..."
+```
+
+**[Say to camera]:**
+"The memory about Node.js is completely gone - rolled back. 
+But we kept the correct memories. This is what sets Memora apart - 
+Git-style version control for AI memory."
+
+---
+
+### OUTRO (30 seconds)
 
 ```bash
-# Show commit history
-memora log --branch alice-project --limit 5
-# Expected: Table of recent commits with timestamps
+poetry run memora stats
+# Show final stats
+```
 
-# Simulate a mistake: add wrong information
-ollama run llama3.2:3b "We use Node.js backend"  # Wrong!
+**[Say to camera]:**
+"That's Memora. Key features:
+1. Automatic capture - no manual save buttons
+2. Git-style branches - separate projects or experiments  
+3. Full commit history - see what was captured when
+4. Rollback capability - undo mistakes instantly
+5. Completely local - your data never leaves your machine
 
-memora search "Node.js"
-# Found: 1 memory
-
-# Show the power: Rollback!
-memora log --branch alice-project
-# Note the commit hash from before the Node.js message
-
-memora rollback <commit_hash>
-# Confirm when prompted
-# ✓ Rolled back to a1b2c3d4...
-# ✓ Previous state preserved in branch: alice-project-backup-a1b2c3d4
-
-memora search "Node.js"
-# Expected: No results now (memory is gone)
-
-memora search "FastAPI"
-# Expected: Still there (rolled back to before Node.js)
+All of this works with ANY Ollama client. It's transparent, 
+automatic, and powerful."
 ```
 
 ---
 
-### Part 3: The "Magic Trick" - Show Capture is Real (3 min)
-**Goal**: Close to the actual problem statement
+## TROUBLESHOOTING DURING VIDEO
+
+### If chat hangs or doesn't capture:
+```bash
+# Press Ctrl+C to exit chat
+# Check that Ollama server in Terminal 1 is running
+# Restart: poetry run memora proxy start in Terminal 2
+# Try again
+```
+
+### If search returns no results:
+```bash
+# The memories might still be processing
+# Wait a moment and try search again
+# Check stats to verify memories were added
+```
+
+### If rollback says "Already at target commit":
+```bash
+# You're trying to rollback to the current commit
+# Get a different commit hash from the log
+# Use one that's a few commits earlier
+```
+
+### If branch switch doesn't work:
+```bash
+# Make sure branch exists first
+poetry run memora branch list  # Check it's there
+poetry run memora branch create <name>  # If not, create it
+poetry run memora branch switch <name>  # Then switch
+```
+
+---
+
+## QUICK REFERENCE - ALL COMMANDS
 
 ```bash
-# Terminal 3: New conversation  
-ollama run llama3.2:3b "I prefer Python over Go for this project"
+# Initialization
+poetry run memora init
 
-# Terminal 1: You should immediately see logs:
-# [PROXY] Received request: api/chat
-# [STREAM] Opening connection...
-# [CAPTURE] Starting capture_memories...
-# [EXTRACT] extract_conversation_memories called...
-# [CAPTURE] ✓ Stored 1 memories from user
-```
+# Chat (captures automatically)
+poetry run memora chat --model llama3.2:1b
 
-```bash
-# Verify it's there
-memora search "Python"
-memora search "prefer"
-```
+# Stats
+poetry run memora stats
 
----
+# Search
+poetry run memora search "keyword"
 
-## Key Messages for Judges
+# Branches
+poetry run memora branch list
+poetry run memora branch create <name>
+poetry run memora branch switch <name>
 
-### 1. **Automatic Capture Works**
-- Show logs in Terminal 1 while having conversation in Terminal 3
-- Proves Memora is actually capturing, not just claiming to
-- The `[PROXY]`, `[STREAM]`, `[CAPTURE]`, `[EXTRACT]` logs are the evidence
+# History
+poetry run memora log
+poetry run memora log --limit 5
+poetry run memora log --branch <name>
 
-### 2. **Git Versioning is Unique**
-- `memora branch create` - projects stay separate
-- `memora log` - see full commit history
-- `memora rollback` - recover from mistakes
-- **Nobody else has this** - it's different from every other memory system
+# Rollback
+poetry run memora rollback <commit_hash> --force --no-create-backup-branch
 
-### 3. **Transparent Integration**
-- Run your Ollama conversation normally
-- Memories captured in background (no API changes needed)
-- No special commands to save or submit memories
-
-### 4. **Production Ready**
-- Error handling with recovery
-- Session management (auto-commit on close)
-- PII filtering built-in
-- Configurable memory branches
-
----
-
-## If Something Goes Wrong
-
-### "No memories captured"
-1. Check Terminal 1 for `[CAPTURE]` logs
-2. If you see logs but no memories stored, look for `[EXTRACT] Pattern matching found 0`
-3. The fallback should kick in: `[EXTRACT] No patterns matched, attempting fallback summary...`
-
-### "Proxy not intercepting requests"
-1. Verify `OLLAMA_HOST=http://localhost:11435` is set
-2. **RESTART the Ollama app/script** after `memora start`
-3. Check Terminal 1 for `[PROXY] Received request` when you make a call
-
-### "Branch switch not working"  
-1. Create the branch first: `memora branch create <name>`
-2. Then switch: `memora branch switch <name>`
-3. Verify: `memora branch list` should show `*` next to current branch
-
----
-
-## Demo Talking Points
-
-**"Traditional memory systems..."**
-- Are cloud-dependent (privacy concern)
-- Store memories as flat text (no versioning)
-- Can't handle contradictions (what if info changes?)
-- Require manual save buttons
-
-**"Memora instead..."**
-- Completely local (all data on your machine)
-- Uses Git-style versioning (branches, commits, rollback)
-- Automatic capture (no manual steps)
-- Transparent proxy (works with ANY Ollama client)
-
-**"The Git versioning is what sets us apart"**
-- You can have `main` branch (stable memories)
-- `experimental` branch (try new things safely)
-- `projects/alice` branch (project-specific context)
-- Rollback when information becomes outdated
-- Full commit history for debugging
-
----
-
-## Post-Demo Questions to Expect
-
-**Q: How is this different from using sqlite?**
-A: We use content-addressable storage (SHA-256) like Git. You get deduplication for free, and data remains valid even if files are moved/copied. Plus all the Git features.
-
-**Q: What about memory limits?**
-A: Tested up to 1M memories. At ~1000 bytes per memory, that's 1GB of storage. For most users, 1-3 years of daily use stays under 500MB.
-
-**Q: How do you avoid capturing sensitive data?**
-A: Built-in PII filter catches email, SSN, credit cards, API keys, etc. before storing. If something shouldn't be captured, the filter blocks it.
-
-**Q: Can I use this with non-Ollama LLMs?**
-A: Right now just Ollama (via transparent proxy). Adding support for other providers is in the roadmap.
-
----
-
-## Files to Show (If Time Allows)
-
-```
-src/
-├── memora/core/
-│   ├── engine.py (100 lines - orchestrator)
-│   ├── session.py (session lifecycle)
-│   ├── refs.py (branch pointers - like Git)
-│   └── store.py (content-addressable storage)
-├── ai/
-│   └── ollama_proxy.py (transparent HTTP proxy)
-└── interface/
-    └── cli.py (all the git-like commands)
-
-Key stat: ~3500 lines of Python across 31 files
+# Proxy (start before chatting)
+poetry run memora proxy start
 ```
 
 ---
 
-## Success Metrics for Demo
+## SUCCESS CHECKLIST FOR VIDEO
 
-✅ User message was captured and searchable  
-✅ AI response was captured and searchable  
-✅ Created and switched branches without losing memories  
-✅ Showed commit history with `memora log`  
-✅ Rolled back to previous state and verified memories changed  
-✅ All of this with zero manual memory-saving steps  
+After recording, verify you got:
 
-If all 6 are true, the demo is successful.
+- [ ] Initialization (memora init)
+- [ ] Auto-capture shown (stats before/after chat)
+- [ ] Search working (found Alice, FastAPI, Python)
+- [ ] Branch creation and switch (memora branch list shows current branch with *)
+- [ ] Commit history (memora log shows multiple commits with dates/authors)
+- [ ] Rollback working (removed Node.js memory, kept Python memory)
+- [ ] Final stats showing all the data
+
+If all checkboxes are ✓, your demo is complete!
+
+---
+
+## NOTES FOR RECORDING
+
+- **Do NOT pause the Ollama server** (Terminal 1)
+- **Do NOT close the proxy** (Terminal 2) - it captures in background
+- **Keep Terminal 3 visible** - this is where the action happens
+- **Show the stats before/after** - proves memories are being stored
+- **Emphasize the search feature** - shows memories are real and searchable
+- **Highlight the rollback** - this is what makes Memora unique
+- **Keep it under 15 minutes** - judges have limited time
