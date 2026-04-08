@@ -128,6 +128,7 @@ class Session:
     branch: str
     started_at: str
     ended_at: str | None = None
+    last_activity_at: str | None = None  # For timeout tracking (separate from started_at)
     ollama_model: str = ""
     memory_ids: list[str] = field(default_factory=list)
     commit_hash: str | None = None
@@ -144,6 +145,7 @@ class Session:
             "branch": self.branch,
             "started_at": self.started_at,
             "ended_at": self.ended_at,
+            "last_activity_at": self.last_activity_at,
             "ollama_model": self.ollama_model,
             "memory_ids": self.memory_ids,
             "commit_hash": self.commit_hash,
@@ -158,6 +160,7 @@ class Session:
             branch=d["branch"],
             started_at=d["started_at"],
             ended_at=d.get("ended_at"),
+            last_activity_at=d.get("last_activity_at"),
             ollama_model=d.get("ollama_model", ""),
             memory_ids=d.get("memory_ids", []),
             commit_hash=d.get("commit_hash"),

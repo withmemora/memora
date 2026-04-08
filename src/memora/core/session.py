@@ -32,10 +32,12 @@ class SessionManager:
 
     def open_session(self, branch: str, ollama_model: str = "") -> Session:
         """Open a new session."""
+        now = now_iso()
         session = Session(
             id=Session.generate_id(),
             branch=branch,
-            started_at=now_iso(),
+            started_at=now,
+            last_activity_at=now,  # Initialize with current time
             ollama_model=ollama_model,
         )
         self._write_active(session)
@@ -66,18 +68,20 @@ class SessionManager:
 
         from datetime import datetime, timezone, timedelta
 
-        started = datetime.fromisoformat(session.started_at)
-        if started.tzinfo is None:
-            started = started.replace(tzinfo=timezone.utc)
+        # Use last_activity_at for timeout tracking, fall back to started_at for old sessions
+        activity_time_str = session.last_activity_at or session.started_at
+        activity_time = datetime.fromisoformat(activity_time_str)
+        if activity_time.tzinfo is None:
+            activity_time = activity_time.replace(tzinfo=timezone.utc)
 
-        elapsed = datetime.now(timezone.utc) - started
+        elapsed = datetime.now(timezone.utc) - activity_time
         if elapsed > timedelta(minutes=self.timeout_minutes):
             return session.id
 
         return None
 
     def touch_session(self, session_id: str) -> None:
-        """Update the session's started_at to now, resetting the timeout.
+        """Update the session's last_activity_at to now, resetting the timeout.
 
         Called on every proxy request to keep the session alive.
         This means the timeout is based on last activity, not start time.
@@ -85,7 +89,7 @@ class SessionManager:
         session = self._load_session(session_id)
         if session is None:
             return
-        session.started_at = now_iso()
+        session.last_activity_at = now_iso()
         self._write_session(session, self.active_path / f"{session_id}.json")
 
     def add_memory_to_session(self, session_id: str, memory_id: str) -> None:

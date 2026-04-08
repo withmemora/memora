@@ -785,7 +785,7 @@ def rollback(
     Use --create-backup-branch to preserve current state.
     """
     from memora.core.engine import CoreEngine
-    from memora.core.refs import get_current_branch, get_branch_commit, update_branch
+    from memora.core.refs import get_head, get_branch, set_branch
 
     engine = CoreEngine()
     try:
@@ -795,6 +795,7 @@ def rollback(
         return
 
     # Validate commit exists
+    store_path = Path(memory_path) / ".memora"
     try:
         store_path, store = engine._ensure()
         target_commit = store.read_commit(commit)
@@ -805,8 +806,9 @@ def rollback(
         return
 
     # Get current state
-    current_branch = get_current_branch(Path(memory_path))
-    current_commit = get_branch_commit(Path(memory_path), current_branch)
+    current_branch, current_commit = get_head(store_path)
+    if not current_branch:
+        current_branch = "main"
 
     if current_commit == commit:
         console.print("Already at target commit.", style="green")
@@ -814,7 +816,7 @@ def rollback(
 
     # Safety warning
     if not force:
-        console.print("⚠️  ROLLBACK WARNING", style="bold red")
+        console.print("WARNING: ROLLBACK", style="bold red")
         console.print(
             f"This will move branch '{current_branch}' from {current_commit[:12]}... to {commit[:12]}...",
             style="yellow",
@@ -840,23 +842,88 @@ def rollback(
     if create_backup_branch:
         backup_name = f"{current_branch}-backup-{current_commit[:8]}"
         try:
-            update_branch(Path(memory_path), backup_name, current_commit)
-            console.print(f"✓ Backup branch created: {backup_name}", style="green")
+            set_branch(store_path, backup_name, current_commit)
+            console.print(f"[OK] Backup branch created: {backup_name}", style="green")
         except Exception as e:
             console.print(f"Failed to create backup: {e}", style="red")
             return
 
     # Perform rollback
     try:
-        update_branch(Path(memory_path), current_branch, commit)
-        console.print(f"✓ Rolled back to {commit[:12]}...", style="green")
+        set_branch(store_path, current_branch, commit)
+        console.print(f"[OK] Rolled back to {commit[:12]}...", style="green")
 
         if create_backup_branch:
-            console.print(f"✓ Previous state preserved in branch: {backup_name}", style="green")
+            console.print(f"[OK] Previous state preserved in branch: {backup_name}", style="green")
             console.print(f"To restore: memora branch switch {backup_name}", style="dim")
 
     except Exception as e:
         console.print(f"Rollback failed: {e}", style="red")
+
+
+@app.command(name="log")
+def show_log(
+    branch: Optional[str] = typer.Option(None, help="Branch to show log for"),
+    limit: int = typer.Option(10, help="Number of commits to show"),
+    memory_path: str = typer.Option("./memora_data", help="Path to memory"),
+):
+    """Show commit history (Git-style log) for current or specified branch."""
+    from memora.core.engine import CoreEngine
+    from memora.core.refs import get_head, get_branch
+
+    engine = CoreEngine()
+    try:
+        engine.open_store(Path(memory_path))
+    except Exception:
+        console.print("No Memora store found.", style="red")
+        return
+
+    # Get current branch
+    try:
+        current_branch, current_commit = get_head(Path(memory_path) / ".memora")
+    except:
+        current_branch = "main"
+        current_commit = None
+
+    target_branch = branch or current_branch or "main"
+
+    # Get commit hash for the target branch
+    try:
+        commit_hash = get_branch(Path(memory_path) / ".memora", target_branch)
+    except:
+        commit_hash = None
+
+    console.print(f"Git-style log for branch '{target_branch}':", style="bold blue")
+    console.print(
+        f"Current HEAD: {current_commit[:12] if current_commit else 'none'}...", style="dim"
+    )
+
+    try:
+        store_path, store = engine._ensure()
+
+        # Walk the commit tree backwards from current commit
+        commits_shown = 0
+        current = commit_hash
+
+        while current and commits_shown < limit:
+            try:
+                commit = store.read_commit(current)
+                console.print(
+                    f"commit {current[:12]}...\n"
+                    f"Author: {commit.author}\n"
+                    f"Date: {commit.committed_at}\n"
+                    f"\n    {commit.message}\n",
+                    style="white",
+                )
+                commits_shown += 1
+                current = commit.parent_hash
+            except Exception as e:
+                break
+
+        if not commits_shown:
+            console.print("No commits found", style="yellow")
+    except Exception as e:
+        console.print(f"Error reading commits: {e}", style="red")
 
 
 @app.command()
@@ -1208,6 +1275,70 @@ def _toggle_ollama_target(name: str, enabled: bool, memory_path: str):
 
     except Exception as e:
         console.print(f"Error updating config: {e}", style="red")
+
+
+# ==================== Directory Monitoring ====================
+
+
+@app.command(name="watch")
+def watch_directory(
+    path: str = typer.Argument(".", help="Directory to monitor for changes"),
+    memory_path: str = typer.Option("./memora_data", help="Path to memory store"),
+):
+    """Watch a directory for new files and automatically ingest them.
+
+    Monitors directory for new .md, .py, .txt, .pdf files and ingests them.
+    Press Ctrl+C to stop watching.
+    """
+    import time
+    from pathlib import Path
+    from memora.core.engine import CoreEngine
+
+    watch_path = Path(path).resolve()
+    if not watch_path.exists():
+        console.print(f"✗ Directory not found: {watch_path}", style="red")
+        return
+
+    engine = CoreEngine()
+    try:
+        engine.open_store(Path(memory_path))
+    except Exception:
+        console.print("No Memora store found. Run 'memora init' first.", style="red")
+        return
+
+    console.print(f"👀 Watching directory: {watch_path}", style="blue")
+    console.print("Supported extensions: .md, .py, .txt, .pdf, .json", style="dim")
+    console.print("Press Ctrl+C to stop\n", style="dim")
+
+    seen_files = set()
+    extensions = {".md", ".py", ".txt", ".pdf", ".json"}
+
+    try:
+        while True:
+            current_files = set()
+
+            # Find all supported files
+            for file_path in watch_path.rglob("*"):
+                if file_path.is_file() and file_path.suffix in extensions:
+                    current_files.add(file_path)
+
+            # Find new files
+            new_files = current_files - seen_files
+
+            if new_files:
+                for file_path in sorted(new_files):
+                    try:
+                        console.print(f"📄 Ingesting: {file_path.name}", style="cyan")
+                        results = engine.ingest_file(str(file_path))
+                        console.print(f"  ✓ Created {len(results)} memories", style="green")
+                    except Exception as e:
+                        console.print(f"  ✗ Error: {e}", style="red")
+
+            seen_files = current_files
+            time.sleep(2)  # Check every 2 seconds
+
+    except KeyboardInterrupt:
+        console.print("\n👋 Directory watching stopped", style="yellow")
 
 
 # ==================== Server Commands ====================
