@@ -42,6 +42,23 @@ memora start
 
 That's it. Memora is now capturing all your Ollama conversations automatically.
 
+---
+
+## 📚 New User Guides
+
+**New to Memora? Start here:**
+
+- **[🚀 QUICK_START_EASY.md](QUICK_START_EASY.md)** - For non-technical users (No coding knowledge needed!)
+- **[🎬 COMPLETE_DEMO_GUIDE.md](COMPLETE_DEMO_GUIDE.md)** - Full feature walkthrough with examples
+- **[🐚 One-Command Startup Scripts](memora_start.sh)** - Choose your OS:
+  - **Windows (PowerShell):** `.\memora_start.ps1`
+  - **Windows (Batch):** `memora_start.bat`
+  - **macOS/Linux:** `./memora_start.sh`
+
+**Want to see everything in action?** See [COMPLETE_DEMO_GUIDE.md](COMPLETE_DEMO_GUIDE.md) for 15+ feature demonstrations!
+
+---
+
 ## Enterprise-Grade Features
 
 ### 🏠 **Local-First Architecture**
