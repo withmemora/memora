@@ -1,5 +1,7 @@
 # Memora directories
 .memora/
+memora_data/
+test_watch_dir/
 
 # Python
 __pycache__/
@@ -23,6 +25,22 @@ env/
 # Development folder and documentation
 dev/
 
+# Demo and hackathon files (not needed for runtime)
+COMMANDS_REFERENCE.md
+DEMO_SUMMARY.md
+VIDEO_DEMO_SCRIPT.md
+FEATURES_AND_TESTING.md
+ARCHITECTURE.md
+dashboard_local.html
+Assets/
+
+# Demo setup scripts (optional - use direct poetry commands instead)
+memora_start.bat
+memora_start.ps1
+memora_start.sh
+setup_for_video.bat
+setup_for_video.sh
+
 # Documentation files (exclude development/temporary docs, keep essential ones)
 # Allow essential documentation
 !README.md
@@ -39,6 +57,7 @@ ARCHITECTURE_COMPREHENSIVE*.md
 MANUAL_TESTING_GUIDE.md
 USER_TESTING_SCENARIOS.md
 architecture.md
+
 # Testing
 .pytest_cache/
 .coverage

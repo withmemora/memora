@@ -28,6 +28,64 @@ def check_port_available(port: int) -> bool:
         return True  # Assume available if we can't test
 
 
+def find_available_port(start_port: int, max_attempts: int = 10) -> int:
+    """Find an available port starting from start_port."""
+    for offset in range(max_attempts):
+        candidate_port = start_port + offset
+        if check_port_available(candidate_port):
+            return candidate_port
+    raise RuntimeError(f"Could not find available port starting from {start_port}")
+
+
+def kill_previous_memora_instances():
+    """Kill any previous memora processes to avoid port conflicts."""
+    import subprocess
+    import time
+
+    try:
+        # Find Python processes with 'memora' in the command line
+        result = subprocess.run(
+            ["tasklist", "/V", "/FO", "CSV"], capture_output=True, text=True, timeout=5
+        )
+
+        lines = result.stdout.strip().split("\n")
+        for line in lines:
+            # Skip header
+            if "Image Name" in line or "python" not in line.lower():
+                continue
+
+            # Look for memora processes
+            if "memora" in line.lower() or "poetry" in line.lower():
+                # Extract PID (it's in a specific position in CSV output)
+                try:
+                    parts = [p.strip('"') for p in line.split('","')]
+                    if len(parts) > 1:
+                        # Try to find PID - it's usually one of the early columns
+                        pid = None
+                        for part in parts[1:3]:  # Check first couple numeric columns
+                            if part.isdigit():
+                                pid = part
+                                break
+
+                        if pid and pid != str(os.getpid()):  # Don't kill current process
+                            try:
+                                subprocess.run(
+                                    ["taskkill", "/PID", pid, "/F"], capture_output=True, timeout=3
+                                )
+                                console.print(
+                                    f"⚠ Stopped previous memora instance (PID: {pid})",
+                                    style="yellow",
+                                )
+                                time.sleep(0.5)  # Wait a bit for port to release
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+    except Exception as e:
+        # If we can't kill processes, just continue
+        pass
+
+
 def ensure_spacy_model():
     """Ensure spaCy model is available, download if missing."""
     try:
@@ -202,17 +260,26 @@ def migrate(
 def start(
     memory_path: str = typer.Option("./memora_data", help="Path to memory"),
     port: int = typer.Option(11435, help="Proxy port"),
+    dashboard_port: int = typer.Option(11436, help="Dashboard port"),
     auto_setup: bool = typer.Option(True, help="Automatically configure OLLAMA_HOST"),
+    auto_ollama: bool = typer.Option(True, help="Auto-start Ollama if not running"),
 ):
-    """Single command to start Memora: init + proxy + setup."""
+    """Single command to start everything: Ollama (if needed) + proxy + dashboard."""
     import os
     import subprocess
+    import threading
     from memora.core.engine import CoreEngine
 
     storage_path = Path(memory_path)
 
+    # Step 0: Kill any previous memora instances to avoid port conflicts
+    console.print("🧹 Cleaning up previous instances...", style="dim")
+    kill_previous_memora_instances()
+
     # Step 1: Initialize if needed
-    safe_print(console, f"{ICONS['rocket']} Starting Memora...", style="bold blue")
+    safe_print(
+        console, f"{ICONS['rocket']} Starting Memora (one-command setup)...", style="bold blue"
+    )
     storage_path.mkdir(parents=True, exist_ok=True)
 
     # Step 1.5: Check version compatibility
@@ -234,25 +301,67 @@ def start(
     # Step 2: Ensure spaCy model is available
     ensure_spacy_model()
 
-    # Step 3: Check port availability
+    # Step 3: Find available ports automatically
     console.print("🔍 Checking port availability...", style="yellow")
+
+    # Find available proxy port
     if not check_port_available(port):
-        console.print(f"✗ Port {port} is already in use.", style="red")
-        console.print(f"  Options:", style="yellow")
-        console.print(f"  1. Stop whatever is using port {port}", style="yellow")
-        console.print(f"  2. Use a different port: memora start --port <port>", style="yellow")
-        console.print(f"  3. Check what's using it: netstat -ano | findstr :{port}", style="yellow")
-        return
-
-    # Also check if Ollama is running on default port 11434
-    if not check_port_available(11434):
-        console.print(f"✓ Ollama detected on port 11434", style="green")
+        original_port = port
+        port = find_available_port(port)
+        console.print(f"⚠ Port {original_port} (proxy) in use, switching to {port}", style="yellow")
     else:
-        console.print(f"⚠ Ollama not detected on port 11434.", style="yellow")
-        console.print(f"  Is Ollama running? Try: ollama serve", style="yellow")
-        console.print(f"  Continuing anyway...", style="dim")
+        console.print(f"✓ Port {port} (proxy) available", style="green")
 
-    # Step 3: Configure OLLAMA_HOST if requested
+    # Find available dashboard port
+    if not check_port_available(dashboard_port):
+        original_dash_port = dashboard_port
+        dashboard_port = find_available_port(dashboard_port)
+        console.print(
+            f"⚠ Port {original_dash_port} (dashboard) in use, switching to {dashboard_port}",
+            style="yellow",
+        )
+    else:
+        console.print(f"✓ Port {dashboard_port} (dashboard) available", style="green")
+
+    # Step 4: Check Ollama and auto-start if needed
+    ollama_port = 11434
+    if not check_port_available(ollama_port):
+        console.print(f"✓ Ollama detected on port {ollama_port}", style="green")
+    else:
+        if auto_ollama:
+            console.print(f"⚠ Ollama not detected on port {ollama_port}", style="yellow")
+            console.print(f"🚀 Attempting to auto-start Ollama...", style="yellow")
+            try:
+                # Try to start Ollama on Windows
+                ollama_proc = subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                import time
+
+                time.sleep(2)  # Give Ollama time to start
+                if check_port_available(ollama_port):
+                    console.print(f"✗ Could not start Ollama. Is it installed?", style="red")
+                    console.print(f"  Install from: https://ollama.ai", style="yellow")
+                    console.print(f"  Then run: ollama serve", style="yellow")
+                    return
+                console.print(f"✓ Ollama started successfully", style="green")
+            except FileNotFoundError:
+                console.print(f"✗ Ollama not found. Is it installed?", style="red")
+                console.print(f"  Install from: https://ollama.ai", style="yellow")
+                console.print(f"  Then run again: memora start", style="yellow")
+                return
+            except Exception as e:
+                console.print(f"⚠ Could not auto-start Ollama: {e}", style="yellow")
+                console.print(f"  Start manually: ollama serve", style="yellow")
+                console.print(f"  Continuing anyway...", style="dim")
+        else:
+            console.print(f"⚠ Ollama not detected on port {ollama_port}", style="yellow")
+            console.print(f"  Start it manually: ollama serve", style="yellow")
+            console.print(f"  Continuing anyway...", style="dim")
+
+    # Step 5: Configure OLLAMA_HOST if requested
     if auto_setup:
         console.print("🔧 Configuring OLLAMA_HOST...", style="yellow")
         try:
@@ -269,20 +378,44 @@ def start(
             except Exception as e:
                 console.print(f"⚠ Could not set OLLAMA_HOST: {e}", style="yellow")
 
-    # Step 4: Start the proxy
-    console.print(f"🌐 Starting proxy on port {port}...", style="yellow")
+    # Step 6: Start the dashboard server in a background thread
+    def start_dashboard():
+        try:
+            from memora.ai.server import start_server as start_fastapi_server
+
+            start_fastapi_server(port=dashboard_port, memory_path=memory_path, proxy_mode=False)
+        except Exception as e:
+            console.print(f"⚠ Dashboard warning: {e}", style="yellow")
+
+    console.print(f"🌐 Starting dashboard on port {dashboard_port}...", style="yellow")
+    dashboard_thread = threading.Thread(target=start_dashboard, daemon=True)
+    dashboard_thread.start()
+
+    import time
+
+    time.sleep(1)  # Give dashboard time to start
+
+    # Step 7: Start the proxy
+    console.print(f"🔌 Starting proxy on port {port}...", style="yellow")
+    console.print("\n" + "=" * 70, style="bold cyan")
     console.print(
-        "✓ Memora is running! Chat with Ollama normally - memories will be captured automatically.",
+        "✓ MEMORA IS RUNNING - ALL-IN-ONE SETUP COMPLETE!",
         style="bold green",
     )
-    console.print("Press Ctrl+C to stop\n", style="dim")
+    console.print("=" * 70, style="bold cyan")
+    console.print(f"  🌐 Dashboard:  http://localhost:{dashboard_port}/dashboard", style="green")
+    console.print(f"  🔌 Proxy:      http://localhost:{port}", style="green")
+    console.print(f"  💾 Memory:     {storage_path}", style="green")
+    console.print("\nChat with Ollama normally - memories will be captured automatically.")
+    console.print("Press Ctrl+C to stop all services\n", style="dim")
+    console.print("=" * 70 + "\n", style="bold cyan")
 
     try:
         from memora.ai.ollama_proxy import start_proxy
 
         start_proxy(proxy_port=port, memory_path=memory_path)
     except KeyboardInterrupt:
-        console.print("\n👋 Memora stopped", style="yellow")
+        console.print("\n👋 Memora stopped (all services closed)", style="yellow")
     except Exception as e:
         console.print(f"✗ Proxy failed: {e}", style="red")
 
